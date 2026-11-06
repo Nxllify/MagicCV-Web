@@ -30,3 +30,21 @@ button.tagchip { cursor: pointer; } button.tagchip:hover { background: rgba(167,
 .bd-move { width: auto; min-width: 128px; max-width: 170px; min-height: 36px; }
 .bd-filter { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
 @media (max-width: 760px) { .binders, .bd-boards, .bd-filter { padding-left: 12px; padding-right: 12px; } }
+
+/* ---- deck page: add box, commander crown, collapsible category groups */
+.bd-add { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.bd-add .la-add { flex: 1 1 320px; max-width: 520px; }
+.bd-add .sel { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 14px; } .bd-add .sel select { width: auto; max-width: 190px; }
+.dx-panel .la-results { max-height: 55vh; }
+.crown { display: inline-flex; vertical-align: middle; margin-right: 8px; color: var(--warn); } .crown .i, tr.bd-cmd .i { width: 18px; height: 18px; color: var(--warn); }
+tr.bd-cmd td { color: var(--warn); } tr.bd-cmd .i { vertical-align: -3px; margin-right: 4px; }
+tr.is-cmd td { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.crownbtn { min-width: 40px; padding: 0 10px; } .crownbtn .i { width: 18px; height: 18px; }
+.crownbtn[aria-pressed=true] { background: rgba(245, 158, 11, .16); border-color: color-mix(in srgb, var(--warn) 55%, transparent); color: var(--warn); }
+.rowacts { display: inline-flex; align-items: center; gap: 6px; }
+.grpbtn { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.grpbtn:hover { background: var(--muted); color: var(--text); } .grpbtn .i { width: 16px; height: 16px; }
+.dx-panel td.nm { min-width: 150px; } .dx-panel td.own { min-width: 118px; } .crown { display: inline-block; } .crown .i { vertical-align: -3px; }
+.dx-panel .tagchips .btn.sm { white-space: nowrap; }
+#dx-panel .decks { grid-template-columns: 230px minmax(0, 1fr); }
+@media (max-width: 1100px) { #dx-panel .decks { grid-template-columns: minmax(0, 1fr); } }

@@ -1,7 +1,8 @@
 // The "database": scans, decks, binders and lists, kept in this browser's localStorage (starts empty).
 //   rows    one object per physical copy (scans.csv columns, plus optional foil / pin / binder)
 //   decks   { deck: { card: qty } }  the main board; this shape is what the classic site and the parser use
-//   deckx   { deck: { commander: {card: qty}, side: {...}, maybe: {...}, tags: {card: [tag]} } }  extra boards and card tags (web2)
+//   deckx   { deck: { cmd: [card, card], size: 40|60|100, side: {...}, maybe: {...}, tags: {card: [category]} } }  (web2) extra boards, categories, size.
+//           The commander is a card of the main deck marked in cmd (at most two: partners), so it counts toward the deck size.
 //   binders [name]  folders for owned copies; a copy is in a binder when row.binder === name, otherwise it is "Unsorted"
 //   lists   { list: { card: qty } }  cards you do not own (wishlist, buylist ...)
 // Rows use the same columns as the desktop scanner's scans.csv, so a scans.csv can be imported as is.
@@ -9,8 +10,17 @@ export const COLS = ['name', 'special_print', 'best_guess_set', 'collector_numbe
 const KEY = 'magiccv.db.1';
 const listeners = new Set();
 
-const seed = () => ({ rows: [], decks: {}, deckx: {}, binders: [], lists: {}, user: null, sample: false });
-const fill = (d) => { d.decks ||= {}; d.deckx ||= {}; d.binders ||= []; d.lists ||= {}; return d; };      // data saved by an older version has no deckx / binders / lists
+const seed = () => ({ v: 2, rows: [], decks: {}, deckx: {}, binders: [], lists: {}, user: null, sample: false });
+const fill = (d) => { d.decks ||= {}; d.deckx ||= {}; d.binders ||= []; d.lists ||= {}; migrate(d); return d; };      // data saved by an older version has no deckx / binders / lists
+function migrate(d) {      // v2: the commander moved from its own board (deckx.commander) into the main deck, marked in deckx.cmd
+  if (d.v >= 2) return;
+  for (const [name, x] of Object.entries(d.deckx)) if (x.commander) {
+    const main = (d.decks[name] ||= {}), cmd = [];
+    for (const [c, q] of Object.entries(x.commander)) { main[c] = (main[c] || 0) + q; if (cmd.length < 2) cmd.push(c); }
+    if (cmd.length) x.cmd = cmd; delete x.commander;
+  }
+  d.v = 2;
+}
 
 let state = load();
 function load() {
@@ -32,11 +42,13 @@ export function freeDeckName(name) {
   while (state.decks[k]) k = `${n} (${i++})`;
   return k;
 }
-export function importDeck(name, cards, extra) {      // cards: {name: qty} (main board); extra: { commander, side, maybe, tags } (all optional)
+export function importDeck(name, cards, extra) {      // cards: {name: qty} (main board, commander included); extra: { cmd: [names], size, side, maybe, tags } (all optional)
   state.decks[name] = { ...cards };
   if (extra) {
     const x = {};
-    for (const b of ['commander', 'side', 'maybe']) if (extra[b] && Object.keys(extra[b]).length) x[b] = { ...extra[b] };
+    for (const b of ['side', 'maybe']) if (extra[b] && Object.keys(extra[b]).length) x[b] = { ...extra[b] };
+    const cmd = (extra.cmd || []).filter((c) => cards[c]).slice(0, 2); if (cmd.length) x.cmd = cmd;
+    if (extra.size) x.size = extra.size;
     if (extra.tags && Object.keys(extra.tags).length) x.tags = Object.fromEntries(Object.entries(extra.tags).map(([c, t]) => [c, [...t]]));
     if (Object.keys(x).length) state.deckx[name] = x; else delete state.deckx[name];
   }
@@ -56,18 +68,19 @@ export function stats() {
 }
 
 // ---- decks ----
-export function newDeck(name) { name = name.trim(); if (!name || state.decks[name]) return false; state.decks[name] = {}; save(); return true; }
+export function newDeck(name, size) { name = name.trim(); if (!name || state.decks[name]) return false; state.decks[name] = {}; if (size) state.deckx[name] = { size }; save(); return true; }
 export function deleteDeck(name) { delete state.decks[name]; delete state.deckx[name]; save(); }
 export function bump(deck, card, by) { const d = state.decks[deck]; if (!d) return; d[card] = (d[card] || 0) + by; if (d[card] <= 0) delete d[card]; save(); }
 const lines = (d) => Object.keys(d).sort((a, b) => a.localeCompare(b)).map((n) => `${d[n]} ${n.split(' // ')[0]}`).join('\n');
 export function deckText(deck) {      // "2 Name": Arena / MTGO import. With a commander or sideboard it gets the Arena headers.
-  const d = state.decks[deck] || {}, x = state.deckx[deck] || {};
-  if (!Object.keys(x.commander || {}).length && !Object.keys(x.side || {}).length) return lines(d);
-  return [['Commander', x.commander], ['Deck', d], ['Sideboard', x.side]].filter(([, b]) => b && Object.keys(b).length).map(([t, b]) => `${t}\n${lines(b)}`).join('\n\n');
+  const d = state.decks[deck] || {}, x = state.deckx[deck] || {}, cmd = commandersOf(deck);
+  if (!cmd.length && !Object.keys(x.side || {}).length) return lines(d);
+  const rest = { ...d }; for (const c of cmd) { rest[c] -= 1; if (rest[c] <= 0) delete rest[c]; }      // the commander is listed once, under its own header
+  return [['Commander', Object.fromEntries(cmd.map((c) => [c, 1]))], ['Deck', rest], ['Sideboard', x.side]].filter(([, b]) => b && Object.keys(b).length).map(([t, b]) => `${t}\n${lines(b)}`).join('\n\n');
 }
 
-// ---- deck boards (web2): main = decks[deck]; commander / side / maybe live in deckx[deck]
-export const BOARDS = [['main', 'Main deck'], ['commander', 'Commander'], ['side', 'Sideboard'], ['maybe', 'Maybeboard']];
+// ---- deck boards (web2): main = decks[deck]; side / maybe live in deckx[deck]
+export const BOARDS = [['main', 'Main deck'], ['side', 'Sideboard'], ['maybe', 'Maybeboard']];
 export function board(deck, name) {      // the {card: qty} object of a board; {} (not stored) when it does not exist yet
   if (name === 'main') return state.decks[deck] || {};
   return (state.deckx[deck] || {})[name] || {};
@@ -100,18 +113,35 @@ export function deckTagList(deck) {      // every tag used in a deck, most used 
   const m = new Map(); for (const t of Object.values((state.deckx[deck] || {}).tags || {})) for (const k of t) m.set(k, (m.get(k) || 0) + 1);
   return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);
 }
-function tidyDeck(deck) {      // drop empty boards and tags of cards that left the deck, so deckx stays small
+function tidyDeck(deck) {      // drop empty boards, a commander that left the main deck and tags of cards that left the deck, so deckx stays small
   const x = state.deckx[deck]; if (!x) return;
-  for (const b of ['commander', 'side', 'maybe']) if (x[b] && !Object.keys(x[b]).length) delete x[b];
+  for (const b of ['side', 'maybe']) if (x[b] && !Object.keys(x[b]).length) delete x[b];
+  const main = state.decks[deck] || {};
+  if (x.cmd) { x.cmd = x.cmd.filter((c) => main[c]); if (!x.cmd.length) delete x.cmd; }
   if (x.tags) {
-    for (const c of Object.keys(x.tags)) if (!['main', 'commander', 'side', 'maybe'].some((b) => (b === 'main' ? state.decks[deck] : x[b] || {})[c])) delete x.tags[c];
+    for (const c of Object.keys(x.tags)) if (!['main', 'side', 'maybe'].some((b) => (b === 'main' ? main : x[b] || {})[c])) delete x.tags[c];
     if (!Object.keys(x.tags).length) delete x.tags;
   }
   if (!Object.keys(x).length) delete state.deckx[deck];
 }
-// every card the deck uses and how many (main + commander + sideboard; the maybeboard is only an idea pile)
+// commanders: up to two cards of the main deck (two = partners). Returns false when the card is not in the deck or two are already set.
+export const commandersOf = (deck) => ((state.deckx[deck] || {}).cmd || []).filter((c) => (state.decks[deck] || {})[c]);
+export function setCommander(deck, card, on) {
+  if (!(state.decks[deck] || {})[card]) return false;
+  const cur = commandersOf(deck).filter((c) => c !== card);
+  if (on) { if (cur.length >= 2) return false; cur.push(card); }
+  const x = (state.deckx[deck] ||= {}); if (cur.length) x.cmd = cur; else delete x.cmd;
+  tidyDeck(deck); save(); return true;
+}
+export const deckSize = (deck) => (state.deckx[deck] || {}).size || null;      // 40 / 60 / 100, or null when not set
+export function setDeckSize(deck, size) {
+  if (!state.decks[deck]) return;
+  const x = (state.deckx[deck] ||= {}); if (size) x.size = size; else delete x.size;
+  tidyDeck(deck); save();
+}
+// every card the deck uses and how many (main deck incl. the commander + sideboard; the maybeboard is only an idea pile)
 export function deckNeeds(deck) {
-  const m = {}; for (const b of ['main', 'commander', 'side']) for (const [c, q] of Object.entries(board(deck, b))) m[c] = (m[c] || 0) + q;
+  const m = {}; for (const b of ['main', 'side']) for (const [c, q] of Object.entries(board(deck, b))) m[c] = (m[c] || 0) + q;
   return m;
 }
 
@@ -182,7 +212,7 @@ export const exportJson = () => JSON.stringify(state, null, 1);
 export function importJson(text) {
   const d = JSON.parse(text);
   if (!d || !Array.isArray(d.rows)) throw new Error('Not a MagicCV database file.');
-  state = fill({ rows: d.rows, decks: d.decks || {}, deckx: d.deckx || {}, binders: d.binders || [], lists: d.lists || {}, user: state.user, sample: false });
+  state = fill({ v: d.v, rows: d.rows, decks: d.decks || {}, deckx: d.deckx || {}, binders: d.binders || [], lists: d.lists || {}, user: state.user, sample: false });
   for (const r of state.rows) if (r.binder && !state.binders.includes(r.binder)) state.binders.push(r.binder);      // a copy never points at a binder that does not exist
   save();
 }
