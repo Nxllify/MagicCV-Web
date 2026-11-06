@@ -1,0 +1,70 @@
+/* decks-ext: styles for its feature module (uses the tokens in style.css) */
+
+/* ---- tabs */
+.dx-tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.dx-tab { min-height: 44px; padding: 0 18px; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--text-muted); font-weight: 600; font-size: 15px; white-space: nowrap; }
+.dx-tab:hover { color: var(--text); background: var(--muted); border-radius: 8px 8px 0 0; }
+.dx-tab[aria-selected=true] { color: var(--accent-hi); border-bottom-color: var(--accent); }
+.dx-tab:focus-visible { outline-offset: -3px; }
+.dx-subbar { padding: 0 20px; border-bottom: 1px solid var(--line); }
+.dx-subbar .dx-tabs { margin: 0; border: 0; }
+.dx-panel { min-width: 0; }
+.dx-panel:focus-visible { outline-offset: 4px; }
+
+/* ---- stats */
+.dx-stats { padding: 20px; }
+.dx-stats .stat .hint { display: block; margin-top: 4px; }
+.dx-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; margin-top: 8px; }
+.dx-charts .card > .hd h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.dx-fig { margin: 0; }
+.dx-fig figcaption { margin-top: 8px; }
+.dx-cols { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.dx-col { display: grid; grid-template-rows: auto 150px auto; justify-items: center; gap: 4px; min-width: 0; }
+.dx-colbar { display: flex; align-items: flex-end; width: 100%; height: 150px; border-bottom: 1px solid var(--border); }
+.dx-colbar .dx-fill { display: block; width: 100%; border-radius: 4px 4px 0 0; background: var(--info) repeating-linear-gradient(135deg, transparent 0 5px, rgba(2, 6, 23, .28) 5px 8px); }
+.dx-val { font-size: 14px; font-weight: 600; color: var(--text); }
+.dx-lbl { font-size: 13px; color: var(--text-muted); }
+.dx-bars { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.dx-bar { display: grid; grid-template-columns: 112px minmax(0, 1fr) 34px; align-items: center; gap: 10px; font-size: 14px; }
+.dx-name { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dx-name b { display: inline-block; min-width: 1.2em; color: var(--text); }
+.dx-bar .dx-val { text-align: right; }
+.dx-track { display: block; height: 16px; border-radius: 4px; background: var(--muted); overflow: hidden; }
+.dx-track .dx-fill { display: block; height: 100%; border-radius: 4px; background: var(--violet) repeating-linear-gradient(135deg, transparent 0 5px, rgba(2, 6, 23, .28) 5px 8px); }
+/* each color has its own hue and stripe pattern plus a text label, so color is never the only signal */
+.dx-track .dx-cW { background: #e8e2c8; }
+.dx-track .dx-cU { background: #38bdf8 repeating-linear-gradient(0deg, transparent 0 4px, rgba(2, 6, 23, .35) 4px 6px); }
+.dx-track .dx-cB { background: #8b7fa8 repeating-linear-gradient(90deg, transparent 0 4px, rgba(2, 6, 23, .45) 4px 6px); }
+.dx-track .dx-cR { background: #ef4444 repeating-linear-gradient(135deg, transparent 0 4px, rgba(2, 6, 23, .4) 4px 6px); }
+.dx-track .dx-cG { background: #22c55e repeating-linear-gradient(45deg, transparent 0 4px, rgba(2, 6, 23, .4) 4px 6px); }
+.dx-track .dx-cC { background: #94a3b8 repeating-linear-gradient(135deg, transparent 0 3px, rgba(2, 6, 23, .3) 3px 4px, transparent 4px 7px); }
+.dx-nf { margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 10px; color: var(--text-2); font-size: 14px; overflow-wrap: anywhere; }
+
+/* ---- wishlist */
+.dx-mode { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; }
+.dx-radio { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--text-2); cursor: pointer; }
+.dx-radio input { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+.dx-total { font-size: 15px; color: var(--text-2); } .dx-total b { font-size: 18px; color: var(--accent-hi); }
+.dx-note { padding: 10px 20px 0; } .dx-note p { margin: 0; }
+.dx-prog { width: 140px; }
+.dx-img { width: 56px; padding: 4px 0 4px 14px; }
+.dx-thumb { display: block; width: 40px; height: 56px; border-radius: 3px; background: var(--muted); }
+.dx-nothumb { display: block; width: 40px; height: 56px; border: 1px dashed var(--border); border-radius: 3px; }
+.dx-decks { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0; }
+#dx-panel .tools .search { max-width: 300px; }
+#dx-panel td.num b { color: var(--text); }
+#dx-panel tr.miss td.num b { color: var(--danger-text); }
+#dx-panel td { height: auto; min-height: 48px; }
+
+@media (max-width: 600px) {
+  .dx-stats { padding: 14px; }
+  .dx-bar { grid-template-columns: 96px minmax(0, 1fr) 30px; }
+  .dx-subbar { padding: 0 8px; }
+  .dx-prog { width: 100%; }
+}
+
+/* the visually hidden data tables must not widen the page (global table has min-width: 640px) */
+table.sr { min-width: 0; width: 1px; }
+/* 1fr has an automatic minimum, so the wide card table pushed the page sideways on phones */
+#dx-panel .decks { grid-template-columns: 300px minmax(0, 1fr); }
+@media (max-width: 1100px) { #dx-panel .decks { grid-template-columns: minmax(0, 1fr); } }

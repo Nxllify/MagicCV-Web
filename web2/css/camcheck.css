@@ -1,0 +1,36 @@
+/* camcheck: styles for its feature module (uses the tokens in style.css) */
+dialog.wide { max-height: calc(100dvh - 24px); overflow-y: auto; overflow-x: hidden; }
+.cc { display: grid; gap: 14px; padding: 22px; min-width: 0; }
+.cc-hd p { margin-top: 4px; }
+.cc-stage { max-height: 46vh; width: 100%; }
+.cc-stage .ph { gap: 8px; padding: 12px; }
+.cc-stage .ph svg.i { width: 40px; height: 40px; }
+.cc-bar { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; min-height: 24px; }
+.cc-step { margin: 0; color: var(--text-2); font-size: 14px; font-weight: 500; }
+.cc-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cc-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; }
+.cc-ic { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: var(--muted); color: var(--text-muted); }
+.cc-ic svg.i { width: 16px; height: 16px; }
+.cc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.cc-b { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; min-width: 0; flex: 1; }
+.cc-b b { grid-column: 1 / -1; font-size: 13px; font-weight: 600; color: var(--text-muted); letter-spacing: .04em; text-transform: uppercase; }
+.cc-t { min-width: 0; overflow-wrap: anywhere; font-size: 15px; color: var(--text); }
+.cc-n { align-self: start; color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.cc-row[data-state=pass] .cc-ic { background: var(--accent-weak); color: var(--accent-hi); }
+.cc-row[data-state=warn] .cc-ic { background: rgba(245, 158, 11, .16); color: var(--warn); }
+.cc-row[data-state=fail] .cc-ic { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger-text); }
+.cc-row[data-state=pending] .cc-t { color: var(--text-muted); }
+.cc-verdict { padding: 14px 16px; border: 1px solid var(--border); border-left-width: 4px; border-radius: 10px; background: var(--surface); }
+.cc-verdict[data-kind=pass] { border-left-color: var(--accent); }
+.cc-verdict[data-kind=warn] { border-left-color: var(--warn); }
+.cc-verdict[data-kind=fail] { border-left-color: var(--danger); }
+.cc-vh { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+.cc-verdict[data-kind=pass] .cc-vh svg { color: var(--accent-hi); } .cc-verdict[data-kind=fail] .cc-vh svg { color: var(--danger-text); } .cc-verdict[data-kind=warn] .cc-vh svg { color: var(--warn); }
+.cc-verdict ul { margin: 8px 0 0; padding-left: 20px; color: var(--text-2); display: grid; gap: 4px; }
+.cc .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+@media (max-width: 520px) {
+  .cc { padding: 16px; }
+  .cc .acts .btn { flex: 1 1 100%; }
+  .cc-stage { max-height: 34vh; }
+  .cc-b { grid-template-columns: minmax(0, 1fr); } .cc-n { grid-row: 3; }
+}

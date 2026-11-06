@@ -1,0 +1,1 @@
+{"n": 118774, "dim": 512, "source_commit": "36b34d8", "quant_cos_min": 0.9998663663864136, "quant_cos_mean": 0.9999569654464722, "digital": 9303, "twins": 17890, "generic": 58}

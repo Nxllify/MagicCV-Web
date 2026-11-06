@@ -1,0 +1,91 @@
+/* pricing: Price Search page, card images, printings lists, review dialog, live scan list */
+.cimg { display: block; flex: none; border-radius: 6px; background: var(--muted); object-fit: contain; }
+.cimg.big { width: 244px; height: 340px; border-radius: 12px; }
+.results { display: grid; gap: 2px; padding: 8px; max-height: 70vh; overflow: auto; }
+.hit { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 4px 10px; border: 1px solid transparent; border-radius: 10px; background: none; color: var(--text); text-align: left; }
+.hit:hover { background: var(--muted); } .hit[aria-current=true] { background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.hit .hn { flex: 1; min-width: 0; } .hit .hn b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .hit .hn small { color: var(--text-muted); } .hit .hp { color: var(--accent-hi); font-size: 14px; white-space: nowrap; }
+.cardhead { display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; border-bottom: 1px solid var(--line); } .cardhead .ci { flex: 1 1 280px; min-width: 0; } .cardhead h2 { margin: 0 0 10px; font-size: 24px; font-weight: 600; }
+td.pr { display: flex; align-items: center; gap: 12px; height: 60px; } td.pr b { display: block; font-weight: 600; } td.pr small { color: var(--text-muted); }
+td.acts { white-space: nowrap; text-align: right; } td.acts .btn { margin-left: 6px; }
+.mut { color: var(--text-muted); }
+.livedot { display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.pill { display: inline-flex; align-items: center; gap: 4px; }
+/* inventory extras */
+td.thumb, th.thumb { width: 56px; padding-right: 0; } td.exp, th.exp { width: 44px; padding: 0 0 0 4px; }
+.expbtn { all: unset; display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; color: var(--text-muted); cursor: pointer; } .expbtn:hover { background: var(--muted); color: var(--text); } .expbtn:focus-visible { outline: 2px solid var(--ring); outline-offset: 0; } .expbtn svg { transition: transform .15s; } .expbtn[aria-expanded=true] svg { transform: rotate(180deg); }
+tr.detail > td { padding: 0; height: auto; background: var(--surface-2); } .prints { padding: 14px 18px 18px 56px; } .prints h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; } .prints table { min-width: 560px; } .prints td, .prints th { height: 44px; }
+.prints tr.cur td { background: var(--accent-weak); }
+.tabs { display: flex; gap: 4px; padding: 6px; margin-bottom: 16px; width: fit-content; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.tabs button { min-height: 40px; padding: 0 18px; border: 0; border-radius: 8px; background: none; color: var(--text-2); font-weight: 600; } .tabs button:hover { background: var(--muted); } .tabs button[aria-selected=true] { background: var(--accent-weak); color: var(--accent-hi); }
+/* review dialog + live list */
+dialog.review { width: min(980px, calc(100vw - 20px)); } dialog.review form { padding: 0; gap: 0; } .rvhead { padding: 20px 22px 8px; } .rvbody { max-height: min(56vh, 520px); overflow: auto; padding: 0 22px; } .rvfoot { display: grid; gap: 12px; padding: 16px 22px 20px; border-top: 1px solid var(--line); background: var(--surface-2); border-radius: 0 0 16px 16px; }
+.rvbody table { min-width: 720px; } .rvbody td { height: 62px; } .qtybox { display: inline-flex; align-items: center; gap: 4px; } .qtybox button { width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 18px; } .qtybox button:hover { background: var(--muted); }
+.qtybox input { width: 56px; min-height: 36px; text-align: center; font: 600 15px var(--mono); color: var(--accent-hi); }
+.foilbtn { min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-2); font-weight: 600; font-size: 13px; } .foilbtn:hover { background: var(--muted); } .foilbtn[aria-pressed=true] { background: linear-gradient(135deg, rgba(56,189,248,.28), rgba(167,139,250,.32)); border-color: var(--violet); color: var(--text); }
+.foilcount { width: 52px; min-height: 36px; margin-left: 6px; text-align: center; font: 600 14px var(--mono); }
+.totals { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 22px; } .totals b { font: 600 22px var(--mono); color: var(--accent-hi); }
+.sess { display: grid; gap: 6px; max-height: 260px; overflow: auto; } .srow { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); } .srow .nm { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .srow .q { font: 600 14px var(--mono); color: var(--accent-hi); }
+.callout { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 18px; margin-bottom: 16px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 12px; background: var(--accent-weak); } .callout p { margin: 0; flex: 1 1 260px; }
+@media (max-width: 860px) { .prints { padding-left: 14px; } .cimg.big { width: 200px; height: 279px; } }
+
+/* ---- inventory: printings dropdown, expand button, thumbs */
+.expbtn{background:none;border:0;color:var(--mut,#94a3b8);width:44px;height:44px;display:inline-grid;place-items:center;border-radius:8px;cursor:pointer}
+.expbtn svg{transition:transform .15s}.expbtn[aria-expanded=true] svg{transform:rotate(180deg)}
+th.exp,td.exp{width:48px;padding:0}th.thumb,td.thumb{width:52px;padding:4px 6px}
+tr.detail>td{padding:0;background:rgba(255,255,255,.02)}
+.prints{padding:14px 16px}.prints h3{margin:0 0 6px;font-size:15px}
+tr.cur td{background:rgba(34,197,94,.08)}
+/* ---- scan review window */
+dialog.review{width:min(960px,96vw)}
+.rv-wrap{max-height:52vh;overflow:auto}
+.rv .stepper{display:inline-flex;gap:4px;align-items:center}
+.rv-q{width:64px;text-align:center;padding:6px}
+.rv-total{display:flex;justify-content:space-between;gap:12px;padding:12px 0;font-size:15px;flex-wrap:wrap}
+.foilbtn[aria-pressed=true]{background:var(--accent,#22c55e);color:#04130a;border-color:transparent}
+.callout{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 16px;margin:0 0 14px;border:1px solid var(--line,#1e293b);border-radius:12px;background:rgba(34,197,94,.08)}
+.rq{margin-left:auto}.rrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rv{padding:20px 22px}.rv .acts{margin-top:14px}.rv .tablewrap{margin:0 -22px}
+
+/* review window: wide enough that the foil controls never wrap */
+dialog.review{width:min(1240px,96vw);max-width:96vw}
+.rv .foilcell{white-space:nowrap;min-width:250px}
+.rv .foilwrap{display:flex;align-items:center;gap:14px}
+.rv .foilcount{display:flex;align-items:center;gap:8px;white-space:nowrap;margin:0}
+.rv .qtycell{white-space:nowrap}
+.rv td,.rv th{padding-left:14px;padding-right:14px}
+.rv table{min-width:0;width:100%}
+/* large view: hover preview on the right */
+.lv{position:fixed;right:24px;top:50%;transform:translateY(-50%);width:340px;max-height:calc(100vh - 32px);overflow:auto;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);z-index:40;pointer-events:none}
+.lv[hidden]{display:none}
+.lv img.big{display:block;width:100%;height:auto;border-radius:12px}
+.lv h3{margin:12px 0 0;font-size:18px}
+.lvgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline}
+.lvgrid span{color:var(--text-muted);font-size:14px}.lvgrid b{text-align:right}
+@media (max-width:1100px){.lv{display:none!important}}
+/* most valuable cards (Price Search) */
+.mv{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;padding:16px}
+.mvc{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);text-align:left;cursor:pointer;color:inherit}
+.mvc:hover{border-color:var(--accent)}
+.mvc .rank{font-family:var(--mono);font-size:13px;color:var(--accent-hi);font-weight:600}
+.mvc .nm{font-weight:600;display:block}
+.mvc .px{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin-top:6px;font-size:14px}
+.mvc .px span{color:var(--text-muted)}.mvc .px b{text-align:right;font-family:var(--mono);font-weight:500}
+dialog.wide.review{width:min(1240px,96vw);max-width:96vw}
+.rv input.input.rv-q{width:76px;min-width:76px;padding:0 6px;text-align:center}
+.rv .foilbtn[aria-pressed=true]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+
+/* option toggles: click the text; on = accent colour, bolder, slightly larger (width is reserved so nothing jumps) */
+.opt{background:none;border:0;padding:0 4px;min-height:44px;color:var(--text-2);cursor:pointer;border-radius:8px}
+.opt>span{display:inline-grid;transition:color .15s,font-size .15s}
+.opt>span::after{content:attr(data-t);height:0;visibility:hidden;overflow:hidden;font-weight:700;font-size:1.08em}
+.opt[aria-checked=true]{color:var(--accent-hi)}
+.opt[aria-checked=true]>span{font-weight:700;font-size:1.08em}
+.tools{gap:6px 18px}
+/* Price Search: the three rows keep one constant gap */
+.page.stack{display:grid;gap:24px}
+.page.stack>*{margin:0}
+.mv{grid-template-columns:repeat(3,minmax(0,1fr))}
+.mvc{grid-template-columns:auto minmax(0,1fr);align-items:start}
+@media (max-width:900px){.mv{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.mv{grid-template-columns:minmax(0,1fr)}}
