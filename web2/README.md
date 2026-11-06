@@ -38,3 +38,10 @@ Deploying only `web2/` is therefore not possible: publish the repo root (or move
 ## Files
 
 `index.html`, `css/style.css` (tokens and themes first, then layout and components), `css/fonts.css` + `fonts/` (Fira Sans, Fira Code, OFL), `js/main.js` (shell, router, Database menu), `js/ui.js` (helpers: icons, dialogs, toasts), `js/prefs.js` (themes, scanner options), `js/pages/*.js`.
+
+## Binders, lists, deck boards and daily prices
+
+- **Binders** (Inventory): folders for the copies you own. A copy (`row.binder`) is in one binder or in none (Unsorted). Chips above the table switch binder; "Select cards" then "Move to binder" moves copies; the Scanner has an "Into binder" picker. The CSV export/import has a `binder` column.
+- **Lists** (`#/lists`): cards you want but do not own (wishlist, buylist). They hold card names with a quantity. "Got it" turns one wanted copy into a real copy in a binder. The Decks > Wishlist tab can save what your decks are missing into a list.
+- **Deck boards and tags** (Decks): Main deck, Commander, Sideboard and Maybeboard, "Move to..." between them, per-card tags, group by type / mana value / color / tag. Importing a list keeps its Commander, Sideboard and Maybeboard sections and turns Archidekt `[Category]` or Moxfield `#tag` into tags. The main board stays `decks[name]` (so the classic site still works); the other boards and tags live in `deckx[name]` (`web/js/store.js`). Statistics cover main + commander; "needed" counts main + commander + sideboard.
+- **Daily prices**: `.github/workflows/update-prices.yml` runs `tools/update_prices.py` every day. It rebuilds `web/data/prices.bin` from Scryfall bulk data and keeps the old file as `prices.prev.bin`, so the Inventory shows each card's change and the collection's change since the previous snapshot. Run it by hand with `python tools/update_prices.py`.

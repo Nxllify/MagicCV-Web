@@ -1,0 +1,32 @@
+/* binders, lists, deck boards and price changes (uses the tokens in style.css) */
+
+/* ---- binder chips above the inventory table */
+.binders { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.bchip { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-weight: 500; }
+.bchip:hover { background: var(--muted); color: var(--text); }
+.bchip[aria-pressed=true] { background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent-hi); }
+.bchip small { color: var(--text-muted); font-size: 13px; } .bchip[aria-pressed=true] small { color: inherit; }
+
+/* ---- price change since the previous daily snapshot */
+.chg { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.chg.up { color: var(--accent-hi); } .chg.down { color: var(--danger-text); }
+
+/* ---- lists page */
+.la-add { position: relative; flex: 1 1 320px; max-width: 460px; }
+.la-add .search { max-width: none; }
+.la-results { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; padding: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 12px 32px rgba(0, 0, 0, .45); max-height: 60vh; }
+.la-results .hit { min-height: 56px; } .la-results .hit .i { flex: none; width: 18px; height: 18px; color: var(--accent-hi); }
+.la-add + .hint { margin: 0; }
+
+/* ---- deck boards and tags */
+.bd-boards { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+.bd-boards .dx-tabs { margin: 0; border: 0; flex: 1 1 auto; }
+.bd-boards .sel { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 14px; } .bd-boards .sel select { width: auto; }
+.dx-tab small { margin-left: 6px; font-family: var(--mono); color: var(--text-muted); } .dx-tab[aria-selected=true] small { color: inherit; }
+tr.bd-grp td { padding: 10px 14px; background: var(--surface-2); color: var(--text-muted); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.tagchips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.tagchip { display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--violet) 40%, transparent); border-radius: 999px; background: rgba(167, 139, 250, .12); color: var(--violet); font-size: 12px; font-weight: 600; }
+button.tagchip { cursor: pointer; } button.tagchip:hover { background: rgba(167, 139, 250, .22); }
+.bd-move { width: auto; min-width: 128px; max-width: 170px; min-height: 36px; }
+.bd-filter { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+@media (max-width: 760px) { .binders, .bd-boards, .bd-filter { padding-left: 12px; padding-right: 12px; } }

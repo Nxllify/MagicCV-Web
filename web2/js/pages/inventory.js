@@ -1,13 +1,13 @@
 import * as db from '../../../web/js/store.js';
 import * as cat from '../catalog.js';
 import * as col from '../collection.js';
-import { h, icon, toast, confirmDialog, dialog, pickFile, download, fmtTime, plural } from '../ui.js';
+import { h, icon, toast, confirmDialog, promptDialog, dialog, pickFile, download, fmtTime, plural } from '../ui.js';
 import { priceCell, sourceNote } from './home.js';
 
 const VKEY = 'magiccv2.inv.view';
 const saved = (() => { try { return JSON.parse(localStorage.getItem(VKEY)) || {}; } catch { return {}; } })();
 // view state survives re-renders; the column / hover switches survive reloads
-const view = { tab: 'list', q: '', combine: true, special: false, group: 'none', sort: 'name', desc: false, sel: new Set(), open: new Set(), prices: !!saved.prices, hideSet: !!saved.hideSet, large: !!saved.large, select: false };
+const view = { tab: 'list', binder: null, q: '', combine: true, special: false, group: 'none', sort: 'name', desc: false, sel: new Set(), open: new Set(), prices: !!saved.prices, hideSet: !!saved.hideSet, large: !!saved.large, select: false };
 const keep = () => localStorage.setItem(VKEY, JSON.stringify({ prices: view.prices, hideSet: view.hideSet, large: view.large }));
 const chipClass = (sp) => (/borderless/.test(sp) ? 'c' : /showcase/.test(sp) ? 'b' : /extended/.test(sp) ? 'a' : /etched|foil/.test(sp) ? 'd' : /promo/.test(sp) ? 'e' : '');
 const qtyText = (e) => String(e.qty) + (e.foil ? ` (${e.foil} foil${e.foil === 1 ? '' : 's'})` : '');
@@ -17,19 +17,23 @@ const rowId = (r) => { let i = rowIds.get(r); if (!i) rowIds.set(r, i = 'r' + ++
 const printingRow = (e) => cat.printings(e.name).find((r) => { const c = cat.rowInfo(r); return c.set === e.set && c.no === e.no; });
 
 export function inventory(root) {
+  if (view.binder && !db.get().binders.includes(view.binder)) view.binder = null;       // the binder was deleted
   let loaded = false, list = [], lvTimer = 0, lvFor = null;
   const tbody = h('tbody'), thead = h('thead'), bulk = h('div', { class: 'bulk', hidden: true, role: 'region', 'aria-label': 'Selected cards' });
   const sumCards = h('b', { class: 'mono' }), live = h('span', { class: 'sr', 'aria-live': 'polite' }), empty = h('div', { class: 'empty', hidden: true });
   const stats = h('div', { class: 'stats' }), listPane = h('div'), chartsPane = h('div', { hidden: true });
   const lv = h('aside', { class: 'lv', hidden: true, 'aria-hidden': 'true' });
-  const COLS = () => [['qty', 'Qty', 'num'], ['name', 'Card', ''], ['sp', 'Special print', ''], ...(view.hideSet ? [] : [['set', 'Set', '']]), ...(view.prices ? [['price', 'Price', 'num']] : [])];
+  const showBinderCol = () => view.binder === null && db.get().binders.length > 0;       // inside a binder the column would repeat its name
+  const COLS = () => [['qty', 'Qty', 'num'], ['name', 'Card', ''], ['sp', 'Special print', ''], ...(view.hideSet ? [] : [['set', 'Set', '']]), ...(showBinderCol() ? [['binder', 'Binder', '']] : []), ...(view.prices ? [['price', 'Price', 'num']] : [])];
+  const binderArg = () => (view.binder === null ? undefined : view.binder);
+  const binderLabel = (c) => [...new Set(c.rows.map((r) => db.binderOf(r)))].map((b) => b || 'Unsorted').sort((a, b) => a.localeCompare(b)).join(', ');
   const span = () => 2 + (view.select ? 1 : 0) + COLS().length;
 
   // ---- data. Combined: one line per card + special print (all its printings together, shown as the printing you own most of).
   // Not combined: one line per physical copy, so each copy can get its own printing.
   function items() {
     const q = view.q.trim().toLowerCase(), out = [];
-    const ents = col.entries().filter((e) => (!q || e.name.toLowerCase().includes(q)) && (!view.special || e.sp));
+    const ents = col.entries(binderArg()).filter((e) => (!q || e.name.toLowerCase().includes(q)) && (!view.special || e.sp));
     if (view.combine) {
       const m = new Map();
       for (const e of ents) {
@@ -44,11 +48,13 @@ export function inventory(root) {
         out.push({ id: rowId(r), name: e.name, sp: e.sp, set: e.set, no: e.no, qty: 1, foil: f, ts: r.timestamp || '', pin: !!r.pin, ents: [e], rows: [r], top: { name: e.name, sp: e.sp, set: e.set, no: e.no, qty: 1, foil: f, pin: !!r.pin, rows: [r] } });
       }
     }
-    for (const c of out) if (loaded && view.prices) c.val = valueOf(c);
+    for (const c of out) { c.binder = binderLabel(c); if (loaded && view.prices) { c.val = valueOf(c); c.chg = changeOf(c); } }
     const val = (c) => (view.sort === 'qty' ? c.qty : view.sort === 'price' ? (c.val?.each ?? -1) : (c[view.sort] || '~').toLowerCase());
     return out.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * (view.desc ? -1 : 1); });
   }
   const valueOf = (c) => col.value({ ...c.top, qty: c.qty, foil: c.foil });
+  // how much one copy moved since the previous daily price snapshot (cents), or null
+  const changeOf = (c) => { if (!cat.hasPrevious()) return null; const p = col.value({ ...c.top, qty: c.qty, foil: c.foil }, true); return c.val.each != null && p.each != null ? c.val.each - p.each : null; };
   const topRow = (c) => (loaded ? (printingRow(c.top) ?? cat.printings(c.name)[0]) : undefined);
   const ownedOf = (c, p) => (view.combine ? c.ents.filter((e) => e.set === p.set && e.no === p.no).reduce((n, e) => n + e.qty, 0) : (c.set === p.set && c.no === p.no ? 1 : 0));
 
@@ -96,7 +102,9 @@ export function inventory(root) {
         h('td', { class: 'thumb' }, topRow(c) ? h('img', { src: cat.imageUrl(topRow(c), 'small'), alt: '', width: 36, height: 50, loading: 'lazy', crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg' }) : null),
         h('td', { class: 'qty num' }, qtyText(c)), h('td', { class: 'nm' }, c.name), h('td', null, c.sp ? h('span', { class: 'chip ' + chipClass(c.sp) }, c.sp) : null),
         view.hideSet ? null : h('td', { class: 'mut' }, c.set.toUpperCase(), c.ents.length > 1 ? h('small', { class: 'mut', title: c.ents.map((e) => `${e.set.toUpperCase()} x${e.qty}`).join(', ') }, ` +${c.ents.length - 1}`) : null),
-        view.prices ? h('td', { class: 'num' }, !loaded ? '…' : c.val.each == null && c.val.eachFoil == null ? h('span', { class: 'mut' }, '–') : h('span', { class: 'mono' }, c.val.each != null ? money(c.val.each) : '–', c.foil && c.val.eachFoil != null ? h('small', { class: 'mut', style: 'display:block' }, `foil ${money(c.val.eachFoil)}`) : null)) : null,
+        showBinderCol() ? h('td', { class: c.binder === 'Unsorted' ? 'mut' : '' }, c.binder) : null,
+        view.prices ? h('td', { class: 'num' }, !loaded ? '…' : c.val.each == null && c.val.eachFoil == null ? h('span', { class: 'mut' }, '–') : h('span', { class: 'mono' }, c.val.each != null ? money(c.val.each) : '–', c.foil && c.val.eachFoil != null ? h('small', { class: 'mut', style: 'display:block' }, `foil ${money(c.val.eachFoil)}`) : null,
+          c.chg ? h('small', { class: 'chg ' + (c.chg > 0 ? 'up' : 'down'), style: 'display:block', title: `since ${cat.previousDate()}` }, cat.fmtChange(c.chg)) : null)) : null,
       )];
       if (open && loaded) tr.push(h('tr', { class: 'detail' }, h('td', { colspan: span() }, printingsPanel(c))));
       return tr;
@@ -110,15 +118,58 @@ export function inventory(root) {
     }
     tbody.replaceChildren(...rows); syncSel();
     empty.hidden = list.length > 0;
-    empty.replaceChildren(...(db.get().rows.length ? [icon('search'), h('h3', null, 'No cards match'), h('p', null, 'Try a different search or turn off "Special prints only".')]
+    empty.replaceChildren(...(db.get().rows.length && view.binder !== null && !col.entries(binderArg()).length ? [icon('box'), h('h3', null, view.binder === '' ? 'No unsorted cards' : `${view.binder} is empty`), h('p', null, 'Turn on "Select cards" in All cards and use "Move to binder", or choose this binder in the Scanner.')]
+      : db.get().rows.length ? [icon('search'), h('h3', null, 'No cards match'), h('p', null, 'Try a different search or turn off "Special prints only".')]
       : [icon('inv'), h('h3', null, 'Your inventory is empty'), h('p', null, 'Scan cards with the Scanner, or import the scans.csv from the desktop scanner.'),
          h('div', { class: 'row', style: 'justify-content:center;margin-top:8px' }, h('a', { class: 'btn primary', href: '#/scanner' }, icon('scan'), 'Scan cards'), h('button', { class: 'btn', onclick: importCsv }, icon('upload'), 'Import scans.csv'))]));
     drawStats();
   }
   function drawStats() {
-    const s = db.stats(), v = loaded && view.prices ? col.collectionValue() : null, st = (c, l, x, sm) => h('div', { class: 'stat ' + c }, h('small', null, l), h('b', { class: sm ? 'sm' : '' }, x));
-    stats.replaceChildren(st('a', 'Cards', s.total), st('b', 'Unique', s.unique), st('c', 'Special prints', s.special), st('d', 'Sets', s.sets),
-      ...(v ? [st('a', 'Collection value', money(v.cents)), st('', 'Without a price', plural(v.unpriced, 'copy', 'copies'), true)] : []));
+    const ents = col.entries(binderArg()), copies = ents.reduce((n, e) => n + e.qty, 0), names = new Set(ents.map((e) => e.name)), sets = new Set(ents.map((e) => e.set).filter(Boolean)), special = ents.reduce((n, e) => n + (e.sp ? e.qty : 0), 0);
+    const v = loaded && view.prices ? col.collectionValue(ents) : null, ch = loaded && view.prices ? col.valueChange(ents) : null;
+    const st = (c, l, x, sm, sub) => h('div', { class: 'stat ' + c }, h('small', null, l), h('b', { class: sm ? 'sm' : '' }, x), sub ? h('span', { class: 'hint' }, sub) : null);
+    stats.replaceChildren(st('a', view.binder === null ? 'Cards' : 'Cards here', copies), st('b', 'Unique', names.size), st('c', 'Special prints', special), st('d', 'Sets', sets.size),
+      ...(v ? [st('a', view.binder === null ? 'Collection value' : 'Binder value', money(v.cents)), st('', 'Without a price', plural(v.unpriced, 'copy', 'copies'), true)] : []),
+      ...(ch ? [st(ch.delta > 0 ? 'a' : '', `Change since ${cat.previousDate()}`, cat.fmtChange(ch.delta), true, ch.pct == null ? null : `${ch.pct >= 0 ? '+' : '−'}${Math.abs(ch.pct).toFixed(1)} % over ${plural(ch.entries, 'card line')}`)] : []));
+  }
+
+  // ---- binders: folders for owned copies. A copy is in one binder or in none (Unsorted).
+  function binderBar() {
+    const s0 = db.get(), counts = db.binderCounts(), total = s0.rows.length;
+    const chip = (label, key, n) => h('button', { type: 'button', class: 'bchip', 'aria-pressed': String(view.binder === key), onclick: () => { view.binder = key; view.sel.clear(); refresh(); } }, h('span', null, label), h('small', { class: 'mono' }, n));
+    const kids = [chip('All cards', null, total)];
+    if (s0.binders.length) { kids.push(chip('Unsorted', '', counts[''])); for (const b of s0.binders) kids.push(chip(b, b, counts[b])); }
+    kids.push(h('button', { type: 'button', class: 'btn sm', onclick: newBinder }, icon('plus'), 'New binder'));
+    if (view.binder) kids.push(h('button', { type: 'button', class: 'btn sm', onclick: renameBinder }, 'Rename'), h('button', { type: 'button', class: 'btn sm danger', onclick: deleteBinder }, icon('trash'), 'Delete binder'));
+    return h('div', { class: 'binders', role: 'group', 'aria-label': 'Binders' }, kids);
+  }
+  async function newBinder() {
+    const n = await promptDialog({ title: 'New binder', text: 'A binder is a folder for the cards you own, like a box or binder on your shelf.', label: 'Binder name', placeholder: 'Trade binder', ok: 'Create' }); if (!n) return;
+    if (!db.addBinder(n)) { toast('A binder with that name already exists'); return; }
+    view.binder = n.trim(); view.sel.clear(); refresh();
+  }
+  async function renameBinder() {
+    const n = await promptDialog({ title: `Rename ${view.binder}`, label: 'New name', placeholder: view.binder, ok: 'Rename' }); if (!n) return;
+    if (db.renameBinder(view.binder, n)) view.binder = n.trim(); else toast('Could not rename: that name is empty or already used');
+  }
+  async function deleteBinder() {
+    const n = db.binderCounts()[view.binder] || 0;
+    if (!(await confirmDialog({ title: 'Delete binder', text: `Delete "${view.binder}"? Its ${plural(n, 'copy', 'copies')} stay in your inventory as Unsorted.`, ok: 'Delete binder', danger: true }))) return;
+    db.deleteBinder(view.binder); view.binder = null; toast('Binder deleted; its cards are now Unsorted');
+  }
+  async function moveToBinder() {
+    const cs = picked(); if (!cs.length) return; const names = db.get().binders, copies = cs.reduce((n, c) => n + c.rows.length, 0);
+    const res = await dialog((close) => {
+      const sel = h('select', { class: 'input', autofocus: true }, h('option', { value: '' }, 'Unsorted (no binder)'), names.map((b) => h('option', { value: b, selected: b === view.binder }, b)), h('option', { value: '\0new' }, '+ New binder…'));
+      const nm = h('input', { class: 'input', placeholder: 'New binder name', hidden: true, autocomplete: 'off' });
+      sel.onchange = () => { nm.hidden = sel.value !== '\0new'; if (!nm.hidden) nm.focus(); };
+      return h('form', { onsubmit: (e) => { e.preventDefault(); const nw = sel.value === '\0new'; const v = nw ? nm.value.trim() : sel.value; if (nw && !v) return; close({ binder: v }); } },
+        h('h2', null, 'Move to binder'), h('p', null, `${plural(copies, 'copy', 'copies')} of ${plural(cs.length, 'selected line')} move to the binder you choose.${view.combine ? ' Every copy of a line moves; turn on "Individual cards" to move single copies.' : ''}`),
+        h('label', { class: 'field' }, h('span', null, 'Binder'), sel), nm,
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Move')));
+    }, { label: 'Move to binder' });
+    if (!res) return;
+    view.sel.clear(); col.moveToBinder(cs.flatMap((c) => c.rows), res.binder); toast(`Moved ${plural(copies, 'copy', 'copies')} to ${res.binder || 'Unsorted'}`);
   }
 
   // ---- large view: hover a card for 0.2 s and a big picture opens on the right with its printing, price and your quantity
@@ -191,12 +242,12 @@ export function inventory(root) {
   const chk = (label, key, persist) => opt(label, () => view[key], (v) => { view[key] = v; if (key === 'prices') refresh(); else draw(); }, persist);
   const individual = opt('Individual cards', () => !view.combine, (v) => { view.combine = !v; view.sel.clear(); draw(); });
   const selectBtn = h('button', { type: 'button', class: 'btn sm', 'aria-pressed': String(view.select), onclick: () => { view.select = !view.select; if (!view.select) view.sel.clear(); refresh(); } }, icon('check'), view.select ? 'Done selecting' : 'Select cards');
-  bulk.append(h('span', null, sumCards, ' selected'), h('span', { class: 'grow' }), h('button', { class: 'btn sm', onclick: addToDeck }, icon('plus'), 'Add to deck'), h('button', { class: 'btn sm danger', onclick: remove }, icon('trash'), 'Remove copy'), h('button', { class: 'btn sm ghost', onclick: () => { view.sel.clear(); syncSel(); } }, 'Clear'));
+  bulk.append(h('span', null, sumCards, ' selected'), h('span', { class: 'grow' }), h('button', { class: 'btn sm', onclick: moveToBinder }, icon('box'), 'Move to binder'), h('button', { class: 'btn sm', onclick: addToDeck }, icon('plus'), 'Add to deck'), h('button', { class: 'btn sm danger', onclick: remove }, icon('trash'), 'Remove copy'), h('button', { class: 'btn sm ghost', onclick: () => { view.sel.clear(); syncSel(); } }, 'Clear'));
   const tab = (id, label) => h('button', { type: 'button', role: 'tab', id: 'tab-' + id, 'aria-selected': String(view.tab === id), 'aria-controls': 'pane-' + id, tabindex: view.tab === id ? 0 : -1, onclick: () => { view.tab = id; refresh(); },
     onkeydown: (e) => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { view.tab = view.tab === 'list' ? 'charts' : 'list'; refresh(); setTimeout(() => root.querySelector('[role=tab][aria-selected=true]')?.focus(), 0); } } }, label);
   listPane.setAttribute('role', 'tabpanel'); listPane.id = 'pane-list'; listPane.setAttribute('aria-labelledby', 'tab-list'); chartsPane.setAttribute('role', 'tabpanel'); chartsPane.id = 'pane-charts'; chartsPane.setAttribute('aria-labelledby', 'tab-charts');
   listPane.hidden = view.tab !== 'list'; chartsPane.hidden = view.tab !== 'charts';
-  listPane.append(h('section', { class: 'card', 'aria-label': 'Card list' },
+  listPane.append(h('section', { class: 'card', 'aria-label': 'Card list' }, binderBar(),
     h('div', { class: 'tools' }, h('label', { class: 'search' }, h('span', { class: 'sr' }, 'Search cards'), icon('search'), search),
       individual, chk('Special prints only', 'special'), chk('Show prices', 'prices', true), chk('Hide set column', 'hideSet', true), chk('Large view', 'large', true), selectBtn,
       view.prices ? h('button', { class: 'btn sm', onclick: refreshPrices, title: 'Fetch live prices from Scryfall for the cheapest printings of your cards' }, 'Refresh prices') : null,

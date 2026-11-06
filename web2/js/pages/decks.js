@@ -3,59 +3,65 @@ import { parseDeckList } from '../../../web/js/decklist.js';          // same pa
 import { h, icon, toast, dialog, confirmDialog, promptDialog, download, pickFile, plural } from '../ui.js';
 import * as cat from '../catalog.js';
 import * as col from '../collection.js';
-import { computeStats, renderStats } from '../deckstats.js';
+import { computeStats, renderStats, TYPE_ORDER, COLOR_ORDER } from '../deckstats.js';
 
 let current = null;   // selected deck (survives re-renders)
-const view = { tab: 'decks', sub: 'cards', mode: 'sum', only: true, q: '' };   // tab state survives data refreshes
+const view = { tab: 'decks', sub: 'cards', mode: 'sum', only: true, q: '', board: 'main', group: 'none', tag: '' };   // tab state survives data refreshes
 let catReady = false;  // once loaded the catalog stays, so later redraws are instant
+const BOARD_NAME = Object.fromEntries(db.BOARDS);
 
 export function decks(root) {
   const all = db.get().decks, names = Object.keys(all).sort((a, b) => a.localeCompare(b));
   if (!all[current]) current = names[0] || null;
   const own = db.owned(), deck = current ? all[current] : {};
-  const cardNames = Object.keys(deck).sort((a, b) => a.localeCompare(b));
+  const total = (o) => Object.values(o).reduce((a, b) => a + b, 0);
   const have = (c) => own[db.norm(c)] || 0;
-  const need = cardNames.reduce((n, c) => n + deck[c], 0), missing = cardNames.reduce((n, c) => n + Math.max(0, deck[c] - have(c)), 0);
-  const select = (n) => { current = n; db.save(); };
+  // boards: main deck, commander, sideboard and maybeboard. Cards that count as "in the deck" (what you need to own) are the first three.
+  const needs = current ? db.deckNeeds(current) : {};
+  const need = total(needs), missing = Object.keys(needs).reduce((n, c) => n + Math.max(0, needs[c] - have(c)), 0);
+  const playing = () => { const m = { ...deck }; for (const [c, q] of Object.entries(db.board(current, 'commander'))) m[c] = (m[c] || 0) + q; return m; };      // main + commander: what the statistics cover
+  const select = (n) => { current = n; view.board = 'main'; view.tag = ''; db.save(); };
 
   async function create() {
     const name = await promptDialog({ title: 'New deck', label: 'Deck name', placeholder: 'My deck', ok: 'Create' }); if (!name) return;
-    current = name; if (!db.newDeck(name)) toast('A deck with that name already exists');
+    current = name; view.board = 'main'; view.tag = ''; if (!db.newDeck(name)) toast('A deck with that name already exists');
   }
   async function del() { if (await confirmDialog({ title: 'Delete deck', text: `Delete "${current}"? Your inventory is not affected.`, ok: 'Delete', danger: true })) db.deleteDeck(current); }
   async function addCard() {
-    const name = await promptDialog({ title: 'Add a card', text: 'Type the exact card name.', label: 'Card name', placeholder: 'Lightning Bolt', ok: 'Add' }); if (name) db.bump(current, name, 1);
+    const name = await promptDialog({ title: 'Add a card', text: `Type the exact card name. It goes on the ${BOARD_NAME[view.board].toLowerCase()}.`, label: 'Card name', placeholder: 'Lightning Bolt', ok: 'Add' }); if (name) db.bumpBoard(current, view.board, name, 1);
   }
   async function importDialog(target) {
     const res = await dialog((close) => {
       const name = h('input', { class: 'input', placeholder: 'Deck name (optional)', autocomplete: 'off' });   // not used when importing into an existing deck
-      const area = h('textarea', { class: 'input', placeholder: '4 Lightning Bolt\n4 Goblin Guide\n1 Sol Ring (CMM) 400\n\nSideboard\n2 Smash to Smithereens', spellcheck: 'false', 'aria-label': 'Deck list' });
-      const side = h('input', { type: 'checkbox' }), info = h('p', { class: 'hint', role: 'status', 'aria-live': 'polite' }, 'Paste a list to see what is recognised.');
+      const area = h('textarea', { class: 'input', placeholder: 'Commander\n1 Atraxa, Praetors\' Voice\n\nDeck\n4 Lightning Bolt\n1 Sol Ring (CMM) 400 [Ramp]\n\nSideboard\n2 Smash to Smithereens', spellcheck: 'false', 'aria-label': 'Deck list' });
+      const info = h('p', { class: 'hint', role: 'status', 'aria-live': 'polite' }, 'Paste a list to see what is recognised.');
       const go = h('button', { class: 'btn primary', type: 'submit', disabled: true }, 'Import');
       const upd = () => {
-        const p = parseDeckList(area.value); go.disabled = !p.main && !(side.checked && (p.side || p.maybe));
-        info.textContent = p.main || p.side || p.maybe ? `${p.main} cards (${p.uniqueMain} unique)` + (p.side ? `, sideboard ${p.side}` : '') + (p.maybe ? `, maybeboard ${p.maybe}` : '') + (p.bad.length ? `, ${plural(p.bad.length, 'line')} not understood` : '') : 'Nothing recognised yet.';
+        const p = parseDeckList(area.value), cmd = total(p.commander), tagged = Object.keys(p.tags).length; go.disabled = !(p.main || p.side || p.maybe);
+        info.textContent = p.main || p.side || p.maybe ? `${p.main - cmd} main deck` + (cmd ? `, ${cmd} commander` : '') + (p.side ? `, ${p.side} sideboard` : '') + (p.maybe ? `, ${p.maybe} maybeboard` : '') + (tagged ? `, ${plural(tagged, 'card')} with tags` : '') + (p.bad.length ? `, ${plural(p.bad.length, 'line')} not understood` : '') : 'Nothing recognised yet.';
       };
-      area.addEventListener('input', upd); side.addEventListener('change', upd);
-      return h('form', { onsubmit: (e) => { e.preventDefault(); close({ name: name.value, parsed: parseDeckList(area.value), side: side.checked }); } },
+      area.addEventListener('input', upd);
+      return h('form', { onsubmit: (e) => { e.preventDefault(); close({ name: name.value, parsed: parseDeckList(area.value) }); } },
         h('h2', null, target ? `Import cards into ${target}` : 'Import a deck'),
-        h('p', null, 'Paste a list from Moxfield, Archidekt, MTG Arena or MTGO (use their Export or Copy as text). Quantities like 4 or 4x, set codes and foil marks are understood.'),
+        h('p', null, 'Paste a list from Moxfield, Archidekt, MTG Arena or MTGO (use their Export or Copy as text). Quantities like 4 or 4x, set codes and foil marks are understood. Commander, sideboard and maybeboard sections go to their own boards; categories like [Ramp] or #Ramp become tags.'),
         target ? null : h('label', { class: 'field' }, h('span', null, 'Name'), name), h('label', { class: 'field' }, h('span', null, 'Deck list'), area),
-        h('div', { class: 'row' }, h('button', { class: 'btn sm', type: 'button', onclick: async () => { const t = await pickFile('.txt,.csv,.dec,text/plain'); if (t != null) { area.value = t; upd(); } } }, icon('upload'), 'Load a .txt file'),
-          h('label', { class: 'check' }, side, 'Also import the sideboard and maybeboard')),
+        h('div', { class: 'row' }, h('button', { class: 'btn sm', type: 'button', onclick: async () => { const t = await pickFile('.txt,.csv,.dec,text/plain'); if (t != null) { area.value = t; upd(); } } }, icon('upload'), 'Load a .txt file')),
         info, h('p', { class: 'hint' }, 'A link to a Moxfield or Archidekt deck cannot be fetched from a web page (those sites block it). Copy the deck as text there and paste it here.'),
         h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), go));
     }, { wide: true, label: target ? `Import cards into ${target}` : 'Import a deck' });
     if (!res) return;
-    const cards = { ...res.parsed.zones.main };
-    if (res.side) for (const z of ['side', 'maybe']) for (const [c, q] of Object.entries(res.parsed.zones[z])) cards[c] = (cards[c] || 0) + q;
+    const z = res.parsed.zones, cmd = res.parsed.commander, main = { ...z.main };
+    for (const [c, q] of Object.entries(cmd)) { main[c] = (main[c] || 0) - q; if (main[c] <= 0) delete main[c]; }      // zones.main also lists the commander cards
+    const boards = { main, commander: cmd, side: z.side, maybe: z.maybe }, count = total(main) + total(cmd) + total(z.side) + total(z.maybe);
     if (target) {            // merge into the open deck, then offer to add the same cards to the inventory
-      const d = db.get().decks[target]; for (const [c, q] of Object.entries(cards)) d[c] = (d[c] || 0) + q; db.save();
-      toast(`Imported ${plural(Object.values(cards).reduce((a, b) => a + b, 0), 'card')} into "${target}"`);
-      await offerInventory(cards); return;
+      for (const [b, o] of Object.entries(boards)) for (const [c, q] of Object.entries(o)) db.bumpBoard(target, b, c, q);
+      for (const [c, t] of Object.entries(res.parsed.tags)) db.setTags(target, c, [...db.tagsOf(target, c), ...t]);
+      toast(`Imported ${plural(count, 'card')} into "${target}"`);
+      const want = {}; for (const o of [main, cmd, z.side]) for (const [c, q] of Object.entries(o)) want[c] = (want[c] || 0) + q;
+      await offerInventory(want); return;
     }
-    current = db.freeDeckName(res.name);                         // select it before the save redraws the page
-    db.importDeck(current, cards); toast(`Imported ${plural(Object.values(cards).reduce((a, b) => a + b, 0), 'card')} into "${current}"`);
+    current = db.freeDeckName(res.name); view.board = 'main'; view.tag = '';      // select it before the save redraws the page
+    db.importDeck(current, main, { commander: cmd, side: z.side, maybe: z.maybe, tags: res.parsed.tags }); toast(`Imported ${plural(count, 'card')} into "${current}"`);
   }
   // after importing cards into a deck: ask, then show the cards with an Owned checkbox so the user chooses what goes into the inventory
   async function offerInventory(cards) {
@@ -107,24 +113,84 @@ export function decks(root) {
     return `Prices are Scryfall estimates for the cheapest printing (snapshot of ${cat.snapshotDate()}` + (at ? `; ${live.length} refreshed live at ${at.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : '') + '). Real shop prices differ.';
   };
 
+  // ---- tags: type comma-separated names, or pick one that the deck already uses
+  async function editTags(card) {
+    const used = db.deckTagList(current), now = db.tagsOf(current, card);
+    const res = await dialog((close) => {
+      const input = h('input', { class: 'input', value: now.join(', '), placeholder: 'Ramp, Removal', autocomplete: 'off', autofocus: true, 'aria-label': 'Tags' });
+      const add = (t) => { const cur = input.value.split(',').map((x) => x.trim()).filter(Boolean); if (!cur.some((x) => x.toLowerCase() === t.toLowerCase())) cur.push(t); input.value = cur.join(', '); input.focus(); };
+      return h('form', { onsubmit: (e) => { e.preventDefault(); close({ tags: input.value.split(',') }); } },
+        h('h2', null, `Tags for ${card}`), h('p', null, 'Tags group cards inside this deck, for example Ramp, Removal or Win condition. Separate several with commas.'),
+        h('label', { class: 'field' }, h('span', null, 'Tags'), input),
+        used.length ? h('div', { class: 'tagchips', style: 'margin:8px 0' }, h('span', { class: 'hint' }, 'In this deck:'), used.map((t) => h('button', { type: 'button', class: 'tagchip', onclick: () => add(t) }, t))) : null,
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
+    }, { label: `Tags for ${card}` });
+    if (res) db.setTags(current, card, res.tags);
+  }
+
+  // ---- grouping of the card table (needs the card data, except grouping by tag)
+  function groupOf(card) {
+    const g = view.group;
+    if (g === 'tag') { const t = db.tagsOf(current, card)[0]; return [t ? 1 : 2, t || 'Untagged']; }
+    const f = cat.find(card); if (!f) return [99, 'Not found in the card data'];
+    const m = cat.meta(f.rows[0]), land = m.types.includes('Land');
+    if (g === 'type') { const t = TYPE_ORDER.find((x) => m.types.includes(x)); const k = land ? 'Land' : m.types.includes('Creature') ? 'Creature' : t; return [k ? TYPE_ORDER.indexOf(k) : 98, k || 'Other']; }
+    if (g === 'cmc') return land ? [100, 'Lands'] : [m.cmc ?? 0, `Mana value ${m.cmc ?? 0}`];
+    const cols = COLOR_ORDER.filter(([k]) => m.colors.includes(k)).map(([, n]) => n);      // color
+    return land ? [100, 'Lands'] : cols.length === 0 ? [50, 'Colorless'] : cols.length > 1 ? [10, 'Multicolor: ' + cols.join(', ')] : [COLOR_ORDER.findIndex(([, n]) => n === cols[0]), cols[0]];
+  }
+
   // ---- Decks tab
   function decksTab() {
     const list = h('section', { class: 'card', 'aria-label': 'Your decks' },
       h('div', { class: 'hd' }, icon('decks'), h('h2', null, 'Decks')),
-      h('div', { class: 'decklist' }, names.length ? names.map((n) => h('button', { class: 'deckbtn', type: 'button', 'aria-current': n === current ? 'true' : null, onclick: () => select(n) }, h('span', null, n), h('small', null, Object.values(all[n]).reduce((a, b) => a + b, 0)))) : [h('p', { class: 'hint', style: 'padding:8px' }, 'No decks yet.')]),
+      h('div', { class: 'decklist' }, names.length ? names.map((n) => h('button', { class: 'deckbtn', type: 'button', 'aria-current': n === current ? 'true' : null, onclick: () => select(n) }, h('span', null, n), h('small', null, total(db.deckNeeds(n))))) : [h('p', { class: 'hint', style: 'padding:8px' }, 'No decks yet.')]),
       h('div', { class: 'row', style: 'padding:0 12px 14px' }, h('button', { class: 'btn primary', onclick: create }, icon('plus'), 'New deck'), h('button', { class: 'btn', onclick: () => importDialog() }, icon('upload'), 'Import')));
 
-    const rows = cardNames.map((c) => h('tr', { class: have(c) < deck[c] ? 'miss' : '' },
-      h('td', null, h('span', { class: 'stepper' }, h('button', { type: 'button', 'aria-label': `One fewer ${c}`, onclick: () => db.bump(current, c, -1) }, '−'), h('b', null, deck[c]), h('button', { type: 'button', 'aria-label': `One more ${c}`, onclick: () => db.bump(current, c, 1) }, '+'))),
-      h('td', { class: 'nm' }, c), h('td', { class: 'own' }, have(c) + (have(c) < deck[c] ? `  (need ${deck[c] - have(c)} more)` : ''))));
+    const onBoard = current ? db.board(current, view.board) : {};       // read here, not once per page load: the board tab changes without a data change
+    const cardNames = Object.keys(onBoard).sort((a, b) => a.localeCompare(b));
+    const otherBoards = db.BOARDS.filter(([b]) => b !== view.board);
+    const row = (c) => {
+      const q = onBoard[c], tags = db.tagsOf(current, c), missingHere = view.board !== 'maybe' && have(c) < (needs[c] || 0);
+      return h('tr', { class: missingHere ? 'miss' : '' },
+        h('td', null, h('span', { class: 'stepper' }, h('button', { type: 'button', 'aria-label': `One fewer ${c}`, onclick: () => db.bumpBoard(current, view.board, c, -1) }, '−'), h('b', null, q), h('button', { type: 'button', 'aria-label': `One more ${c}`, onclick: () => db.bumpBoard(current, view.board, c, 1) }, '+'))),
+        h('td', { class: 'nm' }, c),
+        h('td', null, h('span', { class: 'tagchips' }, tags.map((t) => h('button', { type: 'button', class: 'tagchip', title: 'Show only this tag', onclick: () => { view.tag = view.tag === t ? '' : t; draw(); } }, t)),
+          h('button', { type: 'button', class: 'btn sm ghost', 'aria-label': `Edit tags of ${c}`, onclick: () => editTags(c) }, tags.length ? 'Edit' : icon('plus'), tags.length ? null : 'Tag'))),
+        h('td', { class: 'own' }, have(c) + (missingHere ? `  (need ${needs[c] - have(c)} more)` : '')),
+        h('td', null, h('select', { class: 'input bd-move', 'aria-label': `Move ${c} to another board`, onchange: (e) => { if (e.target.value) db.moveCard(current, c, view.board, e.target.value, q); } },
+          h('option', { value: '' }, 'Move to…'), otherBoards.map(([b, n]) => h('option', { value: b }, n)))));
+    };
+    const shown = cardNames.filter((c) => !view.tag || db.tagsOf(current, c).includes(view.tag));
+    const rows = [];
+    if (view.group === 'none' || (view.group !== 'tag' && !catReady)) shown.forEach((c) => rows.push(row(c)));
+    else {
+      const gm = new Map();
+      for (const c of shown) { const [o, label] = groupOf(c); let g = gm.get(label); if (!g) gm.set(label, g = { o, cards: [] }); g.cards.push(c); }
+      for (const [label, g] of [...gm].sort((a, b) => a[1].o - b[1].o || a[0].localeCompare(b[0]))) {
+        rows.push(h('tr', { class: 'bd-grp' }, h('td', { colspan: 5 }, `${label}  ·  ${plural(g.cards.reduce((n, c) => n + onBoard[c], 0), 'card')}`)));
+        g.cards.forEach((c) => rows.push(row(c)));
+      }
+    }
+
+    const boardTabs = db.BOARDS.map(([b, n]) => [b, [n, h('small', null, total(db.board(current, b)))]]);
+    const tagList = current ? db.deckTagList(current) : [];
 
     let body;
     if (view.sub === 'stats') {
       if (!catReady) body = h('div', { class: 'empty', role: 'status' }, h('h3', null, 'Loading card data…'), h('p', null, 'Statistics need the card catalog.'));
-      else body = h('div', { class: 'dx-statswrap' }, renderStats(computeStats(deck, own, db.norm, cat), cat.fmt, priceNote(cardNames.map((c) => cat.cheapest(c, { treat: '' })))));
+      else { const pl = playing(); body = h('div', { class: 'dx-statswrap' }, h('p', { class: 'hint', style: 'padding:12px 20px 0;margin:0' }, 'Statistics cover the main deck and the commander. The sideboard and maybeboard are not counted.'), renderStats(computeStats(pl, own, db.norm, cat), cat.fmt, priceNote(Object.keys(pl).map((c) => cat.cheapest(c, { treat: '' }))))); }
     } else {
-      body = h('div', null, h('div', { class: 'tablewrap' }, h('table', null, h('caption', { class: 'sr' }, `Cards in ${current}`), h('thead', null, h('tr', null, ['Need', 'Card', 'Owned'].map((t) => h('th', null, t)))), h('tbody', null, rows))),
-        rows.length ? null : h('div', { class: 'empty' }, icon('decks'), h('h3', null, 'This deck is empty'), h('p', null, 'Add a card here, or select cards in the Inventory and use "Add to deck".')));
+      body = h('div', null,
+        h('div', { class: 'bd-boards' }, tabs('bdb', boardTabs, view.board, (k) => { view.board = k; draw(); }, `Boards of ${current}`),
+          h('label', { class: 'sel' }, 'Group by', h('select', { class: 'input', 'aria-label': 'Group cards by', onchange: (e) => { view.group = e.target.value; draw(); } },
+            [['none', 'None'], ['type', 'Card type'], ['cmc', 'Mana value'], ['color', 'Color'], ['tag', 'Tag']].map(([v, t]) => h('option', { value: v, selected: view.group === v }, t))))),
+        tagList.length ? h('div', { class: 'bd-filter', role: 'group', 'aria-label': 'Filter by tag' }, h('span', { class: 'hint', style: 'align-self:center' }, 'Tags:'),
+          tagList.map((t) => h('button', { type: 'button', class: 'bchip', 'aria-pressed': String(view.tag === t), onclick: () => { view.tag = view.tag === t ? '' : t; draw(); } }, t))) : null,
+        h('div', { role: 'tabpanel', id: 'bdb-panel', 'aria-labelledby': `bdb-tab-${view.board}`, class: 'dx-panel' },
+          h('div', { class: 'tablewrap' }, h('table', null, h('caption', { class: 'sr' }, `${BOARD_NAME[view.board]} of ${current}`), h('thead', null, h('tr', null, ['Need', 'Card', 'Tags', 'Owned', 'Board'].map((t) => h('th', null, t)))), h('tbody', null, rows))),
+          rows.length ? null : h('div', { class: 'empty' }, icon('decks'), h('h3', null, view.tag ? `No cards tagged ${view.tag} here` : `${BOARD_NAME[view.board]} is empty`),
+            h('p', null, view.board === 'main' ? 'Add a card here, import a list, or select cards in the Inventory and use "Add to deck".' : 'Add a card here, or use "Move to…" on a card in another board.'))));
     }
     const detail = current ? h('section', { class: 'card', 'aria-label': current },
       h('div', { class: 'hd' }, h('h2', null, current), h('span', { class: 'grow' }), h('span', { class: 'chip ' + (missing ? 'e' : 'a') }, `${need} cards` + (missing ? `, ${missing} not owned` : ', all owned'))),
@@ -142,7 +208,7 @@ export function decks(root) {
   // ---- Wishlist tab
   function wishTab() {
     const m = new Map();
-    for (const dn of names) for (const [c, q] of Object.entries(all[dn])) {
+    for (const dn of names) for (const [c, q] of Object.entries(db.deckNeeds(dn))) {
       const k = db.norm(c); let e = m.get(k); if (!e) m.set(k, e = { key: k, name: c, decks: [], sum: 0, max: 0 });
       e.decks.push([dn, q]); e.sum += q; e.max = Math.max(e.max, q);
     }
@@ -159,6 +225,21 @@ export function decks(root) {
     const wishText = () => shown.filter((e) => e.missing > 0).map((e) => `${e.missing} ${e.name}`).join('\n') + '\n';
     const copyBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => navigator.clipboard.writeText(wishText()).then(() => toast('Wishlist copied')) }, icon('copy'), 'Copy list');
     const expBtn = h('button', { class: 'btn sm', type: 'button', onclick: () => download('wishlist.txt', wishText()) }, icon('download'), 'Export .txt');
+    const toListBtn = h('button', { class: 'btn sm', type: 'button', onclick: saveMissingToList }, icon('list'), 'Save to a list');
+    async function saveMissingToList() {
+      const miss = Object.fromEntries(shown.filter((e) => e.missing > 0).map((e) => [e.name, e.missing])); if (!Object.keys(miss).length) return;
+      const lnames = Object.keys(db.get().lists).sort((a, b) => a.localeCompare(b));
+      const res = await dialog((close) => {
+        const sel = h('select', { class: 'input', autofocus: true }, lnames.map((n) => h('option', { value: n }, n)), h('option', { value: '\0new' }, '+ New list…'));
+        const nm = h('input', { class: 'input', placeholder: 'New list name', value: lnames.length ? '' : 'Wishlist', hidden: !!lnames.length, autocomplete: 'off' });
+        sel.onchange = () => { nm.hidden = sel.value !== '\0new'; if (!nm.hidden) nm.focus(); }; if (!lnames.length) sel.value = '\0new';
+        return h('form', { onsubmit: (e) => { e.preventDefault(); const nw = sel.value === '\0new', v = nw ? nm.value.trim() : sel.value; if (v) close({ list: v }); } },
+          h('h2', null, 'Save missing cards to a list'), h('p', null, `${plural(Object.keys(miss).length, 'card')} you still need are added to the list you choose (quantities add up if a card is already on it).`),
+          h('label', { class: 'field' }, h('span', null, 'List'), sel), nm,
+          h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
+      }, { label: 'Save missing cards to a list' });
+      if (!res) return; db.newList(res.list); db.addToList(res.list, miss); toast(`Saved ${plural(Object.keys(miss).length, 'card')} to ${res.list}`);
+    }
 
     function update() {
       const q = view.q.trim().toLowerCase();
@@ -177,7 +258,7 @@ export function decks(root) {
       note.textContent = catReady ? priceNote(shown.map((e) => e.p)) : 'Loading card data…';
       live.textContent = `${plural(shown.length, 'card')} shown`;
       const none = !shown.length; tw.hidden = none; emptyBox.hidden = !none;
-      copyBtn.disabled = expBtn.disabled = !miss;
+      copyBtn.disabled = expBtn.disabled = toListBtn.disabled = !miss;
       if (none) emptyBox.replaceChildren(...(!entries.length
         ? [icon('decks'), h('h3', null, 'Create or import a deck'), h('p', null, 'The wishlist adds up what your decks need and you do not own yet.'), h('div', { class: 'row', style: 'justify-content:center;margin-top:8px' }, h('button', { class: 'btn primary', onclick: create }, icon('plus'), 'New deck'), h('button', { class: 'btn', onclick: () => importDialog() }, icon('upload'), 'Import a list'))]
         : q ? [icon('search'), h('h3', null, 'No cards match'), h('p', null, 'Try a different search.')]
@@ -205,7 +286,7 @@ export function decks(root) {
     return h('section', { class: 'card', 'aria-label': 'Wishlist' },
       h('div', { class: 'hd' }, icon('list'), h('h2', null, 'Wishlist'), h('span', { class: 'grow' }), h('span', { class: 'dx-total' }, 'Missing cost ', total)),
       h('div', { class: 'tools' }, modeSel, h('div', { class: 'search' }, icon('search'), search), h('label', { class: 'check' }, only, 'Only cards I am missing')),
-      h('div', { class: 'tools' }, copyBtn, expBtn, refresh, prog, h('span', { style: 'flex:1' }), sub),
+      h('div', { class: 'tools' }, copyBtn, expBtn, toListBtn, refresh, prog, h('span', { style: 'flex:1' }), sub),
       h('div', { class: 'dx-note' }, note, live), emptyBox, tw);
   }
 

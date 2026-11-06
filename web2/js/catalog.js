@@ -13,10 +13,12 @@ try { live = JSON.parse(localStorage.getItem(LIVE_KEY)) || {}; } catch { live = 
 
 export function loadCatalog(onProgress = () => {}) {
   return ready ??= (async () => {
-    const get = async (f, type) => { onProgress(f); const r = await fetch(DATA + f); if (!r.ok) throw new Error(`${f}: HTTP ${r.status}. Run tools/export_web_data.py`); return type === 'json' ? r.json() : r.arrayBuffer(); };
-    const [cards, flags, ids, prices, meta, sets, pj] = await Promise.all([get('cards.json', 'json'), get('flags.u8.bin'), get('ids.bin'), get('prices.bin'), get('cardmeta.bin'), get('sets.json', 'json'), get('prices.json', 'json')]);
+    // the price files change every day: always revalidate them, so a visit after the daily update never shows yesterday's numbers
+    const get = async (f, type, fresh) => { onProgress(f); const r = await fetch(DATA + f, fresh ? { cache: 'no-cache' } : undefined); if (!r.ok) throw new Error(`${f}: HTTP ${r.status}. Run tools/export_web_data.py`); return type === 'json' ? r.json() : r.arrayBuffer(); };
+    const optional = async (f) => { try { const r = await fetch(DATA + f, { cache: 'no-cache' }); return r.ok ? r.arrayBuffer() : null; } catch { return null; } };
+    const [cards, flags, ids, prices, meta, sets, pj, prev] = await Promise.all([get('cards.json', 'json'), get('flags.u8.bin'), get('ids.bin'), get('prices.bin', 'bin', true), get('cardmeta.bin'), get('sets.json', 'json'), get('prices.json', 'json', true), optional('prices.prev.bin')]);
     const n = cards.name.length;
-    C = { n, cards, flags: new Uint8Array(flags), ids: new Uint8Array(ids), prices: new Uint32Array(prices), meta: new Uint8Array(meta), sets, snapshot: pj, groups: new Map(), list: [] };
+    C = { n, cards, flags: new Uint8Array(flags), ids: new Uint8Array(ids), prices: new Uint32Array(prices), prev: prev && prev.byteLength === prices.byteLength ? new Uint32Array(prev) : null, meta: new Uint8Array(meta), sets, snapshot: pj, groups: new Map(), list: [] };
     for (let i = 0; i < n; i++) {                                 // printings of a card = its non-digital, front-face rows
       if (C.flags[i] & (1 | 16)) continue;
       const k = cards.name[i].toLowerCase(); let g = C.groups.get(k);
@@ -65,20 +67,32 @@ export function search(q, limit = 40) {
 
 // ---- prices (cents or null)
 export const finishFor = (foil, treat = '') => (/etched/.test(treat) ? 'etched' : foil ? 'foil' : 'nonfoil');
-export function price(row, finish = 'nonfoil') {
-  const c = need(), i = FINISH_IDX[finish], l = live[uuid(row)];
+export function price(row, finish = 'nonfoil', { prev = false } = {}) {
+  const c = need(), i = FINISH_IDX[finish];
+  if (prev) {                                                   // the snapshot before the latest one (null when there is none)
+    const v = c.prev ? c.prev[row * 3 + i] : NONE; return v === NONE ? null : { cents: v, live: false, at: c.snapshot.previous_updated_at ? Date.parse(c.snapshot.previous_updated_at) : 0 };
+  }
+  const l = live[uuid(row)];
   if (l && Date.now() - l[3] < LIVE_TTL && l[i] != null && l[i] !== NONE) return { cents: l[i], live: true, at: l[3] };
   if (l && Date.now() - l[3] < LIVE_TTL && l[i] === NONE) return null;                   // the API said: no price for this finish
   const v = c.prices[row * 3 + i]; return v === NONE ? null : { cents: v, live: false, at: Date.parse(c.snapshot.updated_at) };
 }
 // the cheapest printing of a card (same treatment, so a borderless scan is not priced as a plain copy; the set is ignored: it is only a guess)
-export function cheapest(name, { treat = '', foil = false } = {}) {
+export function cheapest(name, { treat = '', foil = false, prev = false } = {}) {
   const rows = printings(name); if (!rows.length) return null;
   const same = rows.filter((r) => need().cards.treat[r] === treat), pool = same.length ? same : rows, fin = finishFor(foil, treat);
   let best = null;
-  for (const r of pool) { const p = price(r, fin); if (p && p.cents > 0 && (!best || p.cents < best.cents)) best = { row: r, ...p }; }
+  for (const r of pool) { const p = price(r, fin, { prev }); if (p && p.cents > 0 && (!best || p.cents < best.cents)) best = { row: r, ...p }; }
   return best;
 }
+// price change since the previous daily snapshot, in cents (null when either price is missing). Compares the current price (live if refreshed) with the previous snapshot.
+export function change(row, finish = 'nonfoil') {
+  const now = price(row, finish), before = price(row, finish, { prev: true });
+  return now && before ? now.cents - before.cents : null;
+}
+export const hasPrevious = () => !!need().prev;
+export const previousDate = () => (need().snapshot.previous_updated_at || '').slice(0, 10);
+export const fmtChange = (cents) => (cents == null ? '–' : `${cents > 0 ? '+' : cents < 0 ? '−' : ''}$${(Math.abs(cents) / 100).toFixed(2)}`);   // +$1.20 / −$0.30 / $0.00
 export const fmt = (cents) => (cents == null ? '–' : `$${(cents / 100).toFixed(2)}`);
 export const snapshotDate = () => need().snapshot.updated_at.slice(0, 10);
 export const newestLive = () => Math.max(0, ...Object.values(live).map((v) => v[3]));
