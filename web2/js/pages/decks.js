@@ -3,6 +3,7 @@ import { parseDeckList } from '../../../web/js/decklist.js';          // same pa
 import { h, icon, toast, dialog, confirmDialog, promptDialog, download, pickFile, plural } from '../ui.js';
 import * as cat from '../catalog.js';
 import * as col from '../collection.js';
+import { SIZES, newDeckDialog } from '../newdeck.js';
 import { computeStats, renderStats, TYPE_ORDER, COLOR_ORDER } from '../deckstats.js';
 
 let current = null;   // selected deck (survives re-renders)
@@ -16,7 +17,6 @@ let catReady = false;  // once loaded the catalog stays, so later redraws are in
 const BOARD_NAME = Object.fromEntries(db.BOARDS);
 // categories to pick from in one click (any other name works too). A card can have several; a deck lists them as groups, in every board.
 const PRESET_CATS = ['Ramp', 'Card Draw', 'Removal', 'Board Wipe', 'Counterspell', 'Tutor', 'Protection', 'Recursion', 'Finisher', 'Combo', 'Mana Fixing', 'Utility'];
-const SIZES = [[40, '40 cards', 'Limited: draft and sealed'], [60, '60 cards', 'Constructed: Standard, Modern, Pioneer'], [100, '100 cards', 'Commander: includes the commander']];
 let refocusAdd = false;      // after adding a card the page redraws, so the add box gets the focus back
 
 export function decks(root) {
@@ -32,15 +32,7 @@ export function decks(root) {
   const select = (n) => { current = n; view.board = 'main'; view.tag = ''; view.sel.clear(); db.save(); };
 
   async function create() {
-    const res = await dialog((close) => {
-      const name = h('input', { class: 'input', placeholder: 'My deck', autocomplete: 'off', autofocus: true, required: true, 'aria-label': 'Deck name' });
-      let size = 60;
-      const opts = SIZES.map(([n, t, sub]) => h('label', { class: 'xp-opt' }, h('input', { type: 'radio', name: 'dsize', value: n, checked: n === size, onchange: () => { size = n; } }), h('span', null, h('strong', null, t), h('span', { class: 'hint' }, sub))));
-      return h('form', { onsubmit: (e) => { e.preventDefault(); if (name.value.trim()) close({ name: name.value.trim(), size }); } },
-        h('h2', null, 'New deck'), h('label', { class: 'field' }, h('span', null, 'Deck name'), name),
-        h('fieldset', { class: 'xp-set' }, h('legend', { class: 'hint' }, 'How many cards will it have?'), opts),
-        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Create')));
-    }, { label: 'New deck' });
+    const res = await newDeckDialog();
     if (!res) return;
     current = res.name; view.board = 'main'; view.tag = '';
     if (!db.newDeck(res.name, res.size)) toast('A deck with that name already exists');

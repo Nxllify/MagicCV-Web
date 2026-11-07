@@ -6,6 +6,7 @@ import * as cat from '../catalog.js';
 import * as col from '../collection.js';
 import { prefs, setPrefs, BACKENDS } from '../prefs.js';
 import { h, icon, toast, plural, dialog, promptDialog } from '../ui.js';
+import { newDeckDialog } from '../newdeck.js';
 
 // Live camera -> detector -> tracker -> embedder -> gallery search -> accept rules -> REVIEW LIST -> inventory, all in the browser.
 // Scans are collected in a pending list first; the Review window lets you fix quantities and foil before anything reaches the inventory.
@@ -14,6 +15,24 @@ const pending = new Map();                 // key -> {key,name,sp,set,no,qty,foi
 const undo = [];                           // keys in scan order, newest last
 const opts = { foil: false, deck: '', binder: (() => { try { return localStorage.getItem('magiccv2.scan.binder') || ''; } catch { return ''; } })() };    // "scan as foil", destination deck, destination binder
 const setBinder = (b) => { opts.binder = b; try { localStorage.setItem('magiccv2.scan.binder', b); } catch { /* not remembered */ } };
+// "Also add to deck": none, each deck, or a new deck (asks for a name and a size). noneLabel is the first option.
+function deckSelect(label, noneLabel, extra = {}) {
+  const sel = h('select', { class: 'input', 'aria-label': label, ...extra, onchange: async (e) => {
+    if (e.target.value === '\0new') {
+      const r = await newDeckDialog({ text: 'The cards you scan are added to this new deck and to your inventory.' });
+      if (r) { const name = db.freeDeckName(r.name); db.newDeck(name, r.size); opts.deck = name; toast(`Created deck ${name}`); }
+      fill(); return;
+    }
+    opts.deck = e.target.value;
+  } });
+  function fill() {
+    const decks = Object.keys(db.get().decks).sort((a, b) => a.localeCompare(b)); if (opts.deck && !decks.includes(opts.deck)) opts.deck = '';
+    sel.replaceChildren(h('option', { value: '' }, noneLabel), ...decks.map((d) => h('option', { value: d }, `Inventory + deck: ${d}`)), h('option', { value: '\0new' }, '+ New deck…'));
+    sel.value = opts.deck;
+  }
+  fill();
+  return sel;
+}
 // "Into binder": Unsorted, each binder, or a new one (a prompt). onPick runs after the choice is stored.
 function binderSelect(label, onPick) {
   const sel = h('select', { class: 'input', 'aria-label': label, style: 'width:auto', onchange: async (e) => {
@@ -65,11 +84,9 @@ const thumb = (e, w = 36, hh = 50) => { const r = cat.printings(e.name).find((x)
 export async function openReview() {
   if (!pending.size) { toast('Nothing to review yet'); return 'empty'; }
   try { await cat.loadCatalog(); } catch { /* prices stay blank */ }
-  const decks = Object.keys(db.get().decks).sort((a, b) => a.localeCompare(b));
   const res = await dialog((close) => {
     const body = h('tbody'), totals = h('div', { class: 'rv-total', 'aria-live': 'polite' }), note = h('p', { class: 'hint' });
-    const deckSel = h('select', { class: 'input', 'aria-label': 'Also add to deck', style: 'width:auto', onchange: (e) => { opts.deck = e.target.value; } },
-      h('option', { value: '' }, 'Inventory only'), decks.map((d) => h('option', { value: d, selected: opts.deck === d }, `Inventory + deck: ${d}`)));
+    const deckSel = deckSelect('Also add to deck', 'Inventory only', { style: 'width:auto' });
     const refreshBtn = h('button', { class: 'btn sm', type: 'button', onclick: refresh }, 'Refresh prices');
     async function refresh() {
       refreshBtn.disabled = true; refreshBtn.textContent = 'Refreshing…';
@@ -212,9 +229,7 @@ export function scanner(root) {
   } }, BACKENDS.map(([val, l]) => h('option', { value: val, selected: prefs().backend === val }, l)));
   webgpuAvailable().then((ok) => { if (!ok) { const o = [...runOn.options].find((x) => x.value === 'webgpu'); o.textContent += ' - not available in this browser'; } });
   const kv = (k, el) => h('div', { class: 'kv' }, h('span', null, k), el);
-  const decks = Object.keys(db.get().decks).sort((a, b) => a.localeCompare(b));
-  if (opts.deck && !decks.includes(opts.deck)) opts.deck = '';
-  const dest = h('select', { class: 'input', id: 'dest', 'aria-label': 'Scanning into', onchange: (e) => { opts.deck = e.target.value; } }, h('option', { value: '' }, 'Inventory'), decks.map((d) => h('option', { value: d, selected: opts.deck === d }, `Inventory + deck: ${d}`)));
+  const dest = deckSelect('Scanning into', 'Inventory', { id: 'dest' });
     const soundChk = h('input', { type: 'checkbox', checked: prefs().sound, onchange: (e) => { setPrefs({ sound: e.target.checked }); if (e.target.checked) beep(); } });
   const camBtn = h('button', { class: 'btn block', type: 'button', onclick: async () => { try { const m = await import('../camcheck.js'); await m.openCameraCheck(); } catch (e) { toast('Camera check is not available: ' + (e.message || e)); } } }, icon('camera'), 'Check my camera');
   const firstRun = h('div', { class: 'callout', role: 'region', 'aria-label': 'First time', hidden: true }, h('span', null, 'First time here? Check that your camera is sharp enough by scanning a card the app knows.'), h('button', { class: 'btn sm primary', type: 'button', onclick: () => camBtn.click() }, 'Check camera'));
