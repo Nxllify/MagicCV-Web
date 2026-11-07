@@ -7,6 +7,7 @@
 @import url('camcheck.css');
 @import url('pricing.css');
 @import url('tour.css');
+@import url('binders.css');
 
 :root {
   --bg: #020617; --surface: #0e1223; --surface-2: #151b2e; --muted: #1a1e2f; --border: #334155; --line: rgba(148, 163, 184, .16);
@@ -149,7 +150,7 @@ dialog form { display: grid; gap: 14px; padding: 22px; } dialog h2 { margin: 0; 
   .app { display: block; } .side { display: none; }
   .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 8px 0 14px; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
   .topbar .logo { padding: 0; font-size: 18px; flex: 1; } .topbar .logo .mark { width: 30px; height: 30px; }
-  .bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: repeat(4, 1fr); padding-bottom: env(safe-area-inset-bottom); background: var(--surface); border-top: 1px solid var(--line); }
+  .bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr); padding-bottom: env(safe-area-inset-bottom); background: var(--surface); border-top: 1px solid var(--line); }
   .bottomnav a { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 58px; color: var(--text-muted); text-decoration: none; font-size: 12px; font-weight: 500; } .bottomnav a[aria-current=page] { color: var(--accent-hi); }
   .main { padding: 18px 14px calc(88px + env(safe-area-inset-bottom)); } .head h1 { font-size: 24px; } .toasts { bottom: 76px; }
   .grid.cols2 { grid-template-columns: 1fr; } .tools .sel { margin-left: 0; } .btn, .btn.sm { min-height: 44px; } .stat b { font-size: 26px; }

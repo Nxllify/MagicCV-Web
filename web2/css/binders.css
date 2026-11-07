@@ -1,0 +1,81 @@
+/* binders, lists, deck boards and price changes (uses the tokens in style.css) */
+
+/* ---- binder chips above the inventory table */
+.binders { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.bchip { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-weight: 500; }
+.bchip:hover { background: var(--muted); color: var(--text); }
+.bchip[aria-pressed=true] { background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent-hi); }
+.bchip small { color: var(--text-muted); font-size: 13px; } .bchip[aria-pressed=true] small { color: inherit; }
+
+/* ---- price change since the previous daily snapshot */
+.chg { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.chg.up { color: var(--accent-hi); } .chg.down { color: var(--danger-text); }
+
+/* ---- lists page */
+.la-add { position: relative; flex: 1 1 320px; max-width: 460px; }
+.la-add .search { max-width: none; }
+.la-results { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; padding: 6px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 12px 32px rgba(0, 0, 0, .45); max-height: 60vh; }
+.la-results .hit { min-height: 56px; } .la-results .hit .i { flex: none; width: 18px; height: 18px; color: var(--accent-hi); }
+.la-add + .hint { margin: 0; }
+
+/* ---- deck boards and tags */
+.bd-boards { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+.bd-boards .dx-tabs { margin: 0; border: 0; flex: 1 1 auto; }
+.bd-boards .sel { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 14px; } .bd-boards .sel select { width: auto; }
+.dx-tab small { margin-left: 6px; font-family: var(--mono); color: var(--text-muted); } .dx-tab[aria-selected=true] small { color: inherit; }
+tr.bd-grp td { padding: 10px 14px; background: var(--surface-2); color: var(--text-muted); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.tagchips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.tagchip { display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--violet) 40%, transparent); border-radius: 999px; background: rgba(167, 139, 250, .12); color: var(--violet); font-size: 12px; font-weight: 600; }
+button.tagchip { cursor: pointer; } button.tagchip:hover { background: rgba(167, 139, 250, .22); }
+.bd-move { width: auto; min-width: 128px; max-width: 170px; min-height: 36px; }
+.bd-filter { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+@media (max-width: 760px) { .binders, .bd-boards, .bd-filter { padding-left: 12px; padding-right: 12px; } }
+
+/* ---- deck page: add box, commander crown, collapsible category groups */
+.bd-add { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.bd-add .la-add { flex: 1 1 320px; max-width: 520px; }
+.bd-add .sel { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 14px; } .bd-add .sel select { width: auto; max-width: 190px; }
+.dx-panel .la-results { max-height: 55vh; }
+.crown { display: inline-flex; vertical-align: middle; margin-right: 8px; color: var(--warn); } .crown .i, tr.bd-cmd .i { width: 18px; height: 18px; color: var(--warn); }
+tr.bd-cmd td { color: var(--warn); } tr.bd-cmd .i { vertical-align: -3px; margin-right: 4px; }
+tr.is-cmd td { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.crownbtn { min-width: 40px; padding: 0 10px; } .crownbtn .i { width: 18px; height: 18px; }
+.crownbtn[aria-pressed=true] { background: rgba(245, 158, 11, .16); border-color: color-mix(in srgb, var(--warn) 55%, transparent); color: var(--warn); }
+.rowacts { display: inline-flex; align-items: center; gap: 6px; }
+.grpbtn { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.grpbtn:hover { background: var(--muted); color: var(--text); } .grpbtn .i { width: 16px; height: 16px; }
+.dx-panel td.nm { min-width: 150px; } .dx-panel td.own { min-width: 118px; } .crown { display: inline-block; } .crown .i { vertical-align: -3px; }
+.dx-panel .tagchips .btn.sm { white-space: nowrap; }
+#dx-panel .decks { grid-template-columns: 230px minmax(0, 1fr); }
+@media (max-width: 1100px) { #dx-panel .decks { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- category colors: --tc is the color; chips, dots and swatches all read it */
+.tagchip, .tcdot, .swatch { --tc: var(--violet); }
+.c-blue { --tc: var(--info); } .c-green { --tc: var(--accent-hi); } .c-amber { --tc: var(--warn); } .c-red { --tc: var(--danger-text); } .c-pink { --tc: #f472b6; } .c-teal { --tc: #2dd4bf; } .c-gray { --tc: var(--text-muted); }
+.tagchip { border-color: color-mix(in srgb, var(--tc) 42%, transparent); background: color-mix(in srgb, var(--tc) 14%, transparent); color: var(--tc); }
+button.tagchip:hover { background: color-mix(in srgb, var(--tc) 26%, transparent); }
+.tcdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--tc); flex: none; }
+.colorlist { display: grid; gap: 10px; margin: 12px 0; }
+.colorrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.swatches { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.swatch { width: 32px; height: 32px; border: 2px solid transparent; border-radius: 50%; background: var(--tc); cursor: pointer; }
+.swatch[aria-pressed=true] { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg) inset; }
+.swatch:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.bd-toggles { padding: 8px 20px; gap: 4px 14px; border-bottom: 1px solid var(--line); }
+.dx-panel .bulk { margin: 12px; }
+td.thumb, th.thumb { width: 52px; padding: 4px 6px; }
+
+/* ---- the "..." button on a deck row and its two-column menu */
+td.rm, th.rm { width: 48px; padding: 0 8px; text-align: right; }
+.rowmenu { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--text-2); cursor: pointer; opacity: 0; transition: opacity .12s; }
+.rowmenu .i { width: 20px; height: 20px; }
+tr:hover .rowmenu, tr:focus-within .rowmenu, .rowmenu:focus-visible, .rowmenu[aria-expanded=true] { opacity: 1; }
+.rowmenu:hover, .rowmenu[aria-expanded=true] { background: var(--muted); border-color: var(--border); color: var(--text); }
+@media (hover: none) { .rowmenu { opacity: 1; } }
+.cardmenu { position: fixed; z-index: 70; display: grid; grid-template-columns: repeat(2, minmax(210px, 1fr)); width: min(560px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); box-shadow: var(--shadow); }
+.cardmenu .mcol { min-width: 0; } .cardmenu .mcol + .mcol { border-left: 1px solid var(--line); }
+.cardmenu .mg { padding: 6px; } .cardmenu .mg + .mg { border-top: 1px solid var(--line); }
+.cardmenu [role=menuitem] { display: flex; align-items: center; width: 100%; min-height: 40px; padding: 6px 12px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; text-decoration: none; font-size: 14px; cursor: pointer; }
+.cardmenu [role=menuitem]:hover, .cardmenu [role=menuitem]:focus-visible { background: var(--muted); }
+.cardmenu [role=menuitem].danger { color: var(--danger-text); }
+@media (max-width: 560px) { .cardmenu { grid-template-columns: 1fr; } .cardmenu .mcol + .mcol { border-left: 0; border-top: 1px solid var(--line); } }

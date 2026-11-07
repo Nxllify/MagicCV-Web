@@ -23,13 +23,14 @@ export function home(root, params) {
   cat.loadCatalog().then(() => draw(), (e) => body.replaceChildren(h('div', { class: 'empty' }, icon('alert'), h('h3', null, 'Card data did not load'), h('p', null, String(e.message || e)))));
 
   function draw() {
-    const s = db.stats(), v = col.collectionValue();
+    const s = db.stats(), v = col.collectionValue(), ch = col.valueChange();
     const stat = (cls, label, val, sm) => h('div', { class: 'stat ' + cls }, h('small', null, label), h('b', { class: sm ? 'sm' : '' }, val));
     const input = h('input', { class: 'input', type: 'search', value: state.q, placeholder: 'Search a card name, for example Lightning Bolt', 'aria-label': 'Card name', autocomplete: 'off', oninput: (e) => { state.q = e.target.value; state.card = null; list(); detail(); }, onkeydown: (e) => { if (e.key === 'Enter') { const g = cat.search(state.q, 1)[0]; if (g) pick(g.name); } } });
     const results = h('div', { class: 'results', role: 'region', 'aria-label': 'Search results' }), live = h('p', { class: 'sr', role: 'status', 'aria-live': 'polite' }), panel = h('div');
     body.replaceChildren(
       h('div', { class: 'head' }, h('div', null, h('h1', null, 'Price Search'), h('p', null, 'Look up what a card is worth in every printing, and what your collection is worth.'))),
-      h('div', { class: 'stats' }, stat('a', 'Collection value', cat.fmt(v.cents), false), stat('', 'Cards', s.total), stat('b', 'Unique', s.unique), stat('d', 'Price data', cat.newestLive() && Date.now() - cat.newestLive() < 864e5 ? 'live + snapshot' : `snapshot ${cat.snapshotDate()}`, true)),
+      h('div', { class: 'stats' }, stat('a', 'Collection value', cat.fmt(v.cents), false), stat('', 'Cards', s.total), stat('b', 'Unique', s.unique), stat('d', 'Price data', cat.newestLive() && Date.now() - cat.newestLive() < 864e5 ? 'live + snapshot' : `snapshot ${cat.snapshotDate()}`, true),
+        ...(ch ? [stat(ch.delta > 0 ? 'a' : '', `Change since ${cat.previousDate()}`, cat.fmtChange(ch.delta) + (ch.pct == null ? '' : ` (${ch.pct >= 0 ? '+' : '−'}${Math.abs(ch.pct).toFixed(1)} %)`), true)] : [])),
       h('div', { class: 'grid side-right', style: 'grid-template-columns:minmax(0,380px) minmax(0,1fr)' },
         h('section', { class: 'card', 'aria-label': 'Search' }, h('div', { class: 'tools' }, h('label', { class: 'search', style: 'flex:1;max-width:none' }, h('span', { class: 'sr' }, 'Card name'), icon('search'), input)), results, live),
         panel), valuable(), sourceNote());

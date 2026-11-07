@@ -5,14 +5,33 @@ import { scanStill } from '../../../web/js/scan/pipeline.js';
 import * as cat from '../catalog.js';
 import * as col from '../collection.js';
 import { prefs, setPrefs, BACKENDS } from '../prefs.js';
-import { h, icon, toast, plural, dialog } from '../ui.js';
+import { h, icon, toast, plural, dialog, promptDialog } from '../ui.js';
 
 // Live camera -> detector -> tracker -> embedder -> gallery search -> accept rules -> REVIEW LIST -> inventory, all in the browser.
 // Scans are collected in a pending list first; the Review window lets you fix quantities and foil before anything reaches the inventory.
 // No SIFT step here: a card is only named when the embedder is sure (the same thresholds as the desktop scanner).
 const pending = new Map();                 // key -> {key,name,sp,set,no,qty,foil}  (survives leaving the page, not a reload)
 const undo = [];                           // keys in scan order, newest last
-const opts = { foil: false, deck: '' };    // "scan as foil", destination deck
+const opts = { foil: false, deck: '', binder: (() => { try { return localStorage.getItem('magiccv2.scan.binder') || ''; } catch { return ''; } })() };    // "scan as foil", destination deck, destination binder
+const setBinder = (b) => { opts.binder = b; try { localStorage.setItem('magiccv2.scan.binder', b); } catch { /* not remembered */ } };
+// "Into binder": Unsorted, each binder, or a new one (a prompt). onPick runs after the choice is stored.
+function binderSelect(label, onPick) {
+  const sel = h('select', { class: 'input', 'aria-label': label, style: 'width:auto', onchange: async (e) => {
+    if (e.target.value === '\0new') {
+      const n = await promptDialog({ title: 'New binder', label: 'Binder name', placeholder: 'Trade binder', ok: 'Create' });
+      if (n) { db.addBinder(n); setBinder(db.get().binders.find((b) => b.toLowerCase() === n.trim().toLowerCase()) || ''); }
+      fill(); onPick?.(); return;
+    }
+    setBinder(e.target.value); onPick?.();
+  } });
+  function fill() {
+    const names = db.get().binders; if (opts.binder && !names.includes(opts.binder)) setBinder('');
+    sel.replaceChildren(h('option', { value: '' }, 'Unsorted'), ...names.map((b) => h('option', { value: b }, `Binder: ${b}`)), h('option', { value: '\0new' }, '+ New binder…'));
+    sel.value = opts.binder;
+  }
+  fill();
+  return sel;
+}
 let lastCard = '—', scannedTotal = 0;
 
 const pendingCount = () => [...pending.values()].reduce((n, e) => n + e.qty, 0);
@@ -88,9 +107,9 @@ export async function openReview() {
     const addBtn = h('button', { class: 'btn primary', type: 'button', onclick: () => {
       const list = [...pending.values()], n = list.reduce((x, e) => x + e.qty, 0); if (!n) return;
       const v = col.collectionValue(list.map((e) => ({ ...e, pin: false })));
-      col.addEntries(list.map((e) => ({ name: e.name, sp: e.sp, set: e.set, no: e.no, qty: e.qty, foil: e.foil })), { deck: opts.deck || undefined });
+      col.addEntries(list.map((e) => ({ name: e.name, sp: e.sp, set: e.set, no: e.no, qty: e.qty, foil: e.foil })), { deck: opts.deck || undefined, binder: opts.binder || undefined });
       pending.clear(); undo.length = 0; close('added');
-      toast(`Added ${plural(n, 'card')} (about ${money(v.cents)})${opts.deck ? ` and to ${opts.deck}` : ''}`);
+      toast(`Added ${plural(n, 'card')} (about ${money(v.cents)})${opts.binder ? ` to ${opts.binder}` : ''}${opts.deck ? ` and to ${opts.deck}` : ''}`);
     } });
     queueMicrotask(() => { body.closest('dialog')?.classList.add('review'); draw(); });
     return h('div', { class: 'rv' }, h('h2', null, 'Scanned cards'),
@@ -98,7 +117,7 @@ export async function openReview() {
       h('div', { class: 'tablewrap rv-wrap' }, h('table', null, h('caption', { class: 'sr' }, 'Scanned cards'),
         h('thead', null, h('tr', null, h('th', { class: 'thumb' }, h('span', { class: 'sr' }, 'Image')), h('th', null, 'Card'), h('th', null, 'Quantity'), h('th', null, 'Foil'), h('th', { class: 'num' }, 'Each'), h('th', { class: 'num' }, 'Total'), h('th', null, h('span', { class: 'sr' }, 'Remove')))), body)),
       totals, note,
-      h('div', { class: 'row', style: 'justify-content:space-between;margin-top:6px' }, deckSel, refreshBtn),
+      h('div', { class: 'row', style: 'justify-content:space-between;margin-top:6px' }, h('span', { class: 'row' }, binderSelect('Add the scanned cards to binder'), deckSel), refreshBtn),
       h('div', { class: 'acts' },
         h('button', { class: 'btn danger', type: 'button', onclick: () => { pending.clear(); undo.length = 0; close('discarded'); toast('Discarded the scanned list'); } }, 'Discard all'),
         h('button', { class: 'btn', type: 'button', onclick: () => close('keep') }, 'Keep scanning'), addBtn));
@@ -210,6 +229,7 @@ export function scanner(root) {
         h('section', { class: 'card', 'aria-label': 'Controls' }, h('div', { class: 'bd', style: 'display:grid;gap:14px' },
           h('label', { class: 'field' }, h('span', null, 'Run the scanner on'), runOn),
           h('label', { class: 'field' }, h('span', null, 'Scanning into'), dest),
+          h('label', { class: 'field' }, h('span', null, 'Into binder'), binderSelect('Scanned cards go into binder')),
           h('label', { class: 'check' }, soundChk, 'Beep when a card is recognised'),
           startBtn, h('div', { class: 'row' }, reviewBtn, undoBtn),
           h('button', { class: 'btn block', onclick: imageTest }, icon('image'), 'Scan an image file'), camBtn,

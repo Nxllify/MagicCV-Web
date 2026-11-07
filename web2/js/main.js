@@ -4,6 +4,7 @@ import './prefs.js';
 import { home } from './pages/home.js';
 import { inventory } from './pages/inventory.js';
 import { decks } from './pages/decks.js';
+import { lists } from './pages/lists.js';
 import { scanner } from './pages/scanner.js';
 import { settingsPage } from './pages/settings.js';
 import * as cat from './catalog.js';
@@ -14,6 +15,7 @@ const ROUTES = [
   { path: '/', label: 'Price Search', icon: 'search', page: home },
   { path: '/inventory', label: 'Inventory', icon: 'inv', page: inventory, count: () => db.stats().total, unit: 'cards' },
   { path: '/decks', label: 'Decks', icon: 'decks', page: decks, count: () => db.stats().decks, unit: 'decks' },
+  { path: '/lists', label: 'Lists', icon: 'list', page: lists, count: () => Object.keys(db.get().lists).length, unit: 'lists' },
   { path: '/scanner', label: 'Scanner', icon: 'scan', page: scanner, live: true },
   { path: '/settings', label: 'Settings', icon: 'gear', page: settingsPage, hidden: true },
 ];
