@@ -64,3 +64,18 @@ button.tagchip:hover { background: color-mix(in srgb, var(--tc) 26%, transparent
 .bd-toggles { padding: 8px 20px; gap: 4px 14px; border-bottom: 1px solid var(--line); }
 .dx-panel .bulk { margin: 12px; }
 td.thumb, th.thumb { width: 52px; padding: 4px 6px; }
+
+/* ---- the "..." button on a deck row and its two-column menu */
+td.rm, th.rm { width: 48px; padding: 0 8px; text-align: right; }
+.rowmenu { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--text-2); cursor: pointer; opacity: 0; transition: opacity .12s; }
+.rowmenu .i { width: 20px; height: 20px; }
+tr:hover .rowmenu, tr:focus-within .rowmenu, .rowmenu:focus-visible, .rowmenu[aria-expanded=true] { opacity: 1; }
+.rowmenu:hover, .rowmenu[aria-expanded=true] { background: var(--muted); border-color: var(--border); color: var(--text); }
+@media (hover: none) { .rowmenu { opacity: 1; } }
+.cardmenu { position: fixed; z-index: 70; display: grid; grid-template-columns: repeat(2, minmax(210px, 1fr)); width: min(560px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); box-shadow: var(--shadow); }
+.cardmenu .mcol { min-width: 0; } .cardmenu .mcol + .mcol { border-left: 1px solid var(--line); }
+.cardmenu .mg { padding: 6px; } .cardmenu .mg + .mg { border-top: 1px solid var(--line); }
+.cardmenu [role=menuitem] { display: flex; align-items: center; width: 100%; min-height: 40px; padding: 6px 12px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; text-decoration: none; font-size: 14px; cursor: pointer; }
+.cardmenu [role=menuitem]:hover, .cardmenu [role=menuitem]:focus-visible { background: var(--muted); }
+.cardmenu [role=menuitem].danger { color: var(--danger-text); }
+@media (max-width: 560px) { .cardmenu { grid-template-columns: 1fr; } .cardmenu .mcol + .mcol { border-left: 0; border-top: 1px solid var(--line); } }

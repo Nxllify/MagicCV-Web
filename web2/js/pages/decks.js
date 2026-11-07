@@ -86,7 +86,132 @@ export function decks(root) {
   }
   function toggleCommander(card) {
     const on = db.commandersOf(current).includes(card);
-    if (!db.setCommander(current, card, !on)) toast('A deck has at most two commanders');
+    if (!db.setCommander(current, card, !on)) { toast('A deck has at most two commanders'); return; }
+    if (!on && db.deckSize(current) !== 100) { db.setDeckSize(current, 100); toast(`${card} is now a commander; deck size set to 100`); }
+  }
+
+  // ---- small dialogs used by the card menu
+  async function pickListDialog(title, text, ok) {
+    const lnames = Object.keys(db.get().lists).sort((a, b) => a.localeCompare(b));
+    const res = await dialog((close) => {
+      const sel = h('select', { class: 'input', autofocus: true }, lnames.map((n) => h('option', { value: n }, n)), h('option', { value: '\0new' }, '+ New list…'));
+      const nm = h('input', { class: 'input', placeholder: 'New list name', value: lnames.length ? '' : 'Wishlist', hidden: !!lnames.length, autocomplete: 'off' });
+      sel.onchange = () => { nm.hidden = sel.value !== '\0new'; if (!nm.hidden) nm.focus(); }; if (!lnames.length) sel.value = '\0new';
+      return h('form', { onsubmit: (e) => { e.preventDefault(); const nw = sel.value === '\0new', v = nw ? nm.value.trim() : sel.value; if (v) close({ list: v }); } },
+        h('h2', null, title), h('p', null, text), h('label', { class: 'field' }, h('span', null, 'List'), sel), nm,
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, ok)));
+    }, { label: title });
+    return res;
+  }
+  async function numberDialog(title, text, ok, value = 1) {
+    return dialog((close) => {
+      const n = h('input', { class: 'input', type: 'number', min: 1, max: 99, value, autofocus: true, required: true, 'aria-label': 'How many' });
+      return h('form', { onsubmit: (e) => { e.preventDefault(); const v = Math.max(1, Math.min(99, Math.floor(+n.value) || 0)); if (v) close(v); } }, h('h2', null, title), text ? h('p', null, text) : null, h('label', { class: 'field' }, h('span', null, 'How many'), n),
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, ok)));
+    }, { label: title });
+  }
+  const chosenRow = (card) => {      // the printing picked for a card in this deck, else the newest one
+    const g = cat.find(card); if (!g) return null; const pr = db.printOf(current, card);
+    return (pr && g.rows.find((r) => { const c = cat.rowInfo(r); return c.set === pr.set && c.no === pr.no; })) ?? g.rows[0];
+  };
+  async function switchPrinting(card) {
+    if (!catReady) { toast('Card data is still loading'); return; }
+    const rows = cat.printings(card), cur = db.printOf(current, card);
+    if (!rows.length) { toast('No printings found for this card'); return; }
+    const res = await dialog((close) => h('div', { class: 'rv' }, h('h2', null, `Printings of ${card}`),
+      h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'The printing you pick is the picture shown in this deck. Prices elsewhere still use the cheapest printing.'),
+      h('div', { class: 'tablewrap rv-wrap' }, h('table', null, h('caption', { class: 'sr' }, `Printings of ${card}`),
+        h('thead', null, h('tr', null, h('th', null, 'Printing'), h('th', null, 'Treatment'), h('th', { class: 'num' }, 'Price'), h('th', null, h('span', { class: 'sr' }, 'Choose')))),
+        h('tbody', null, rows.map((r) => {
+          const c = cat.rowInfo(r), p = cat.price(r, 'nonfoil'), isCur = cur && cur.set === c.set && cur.no === c.no;
+          return h('tr', { class: isCur ? 'cur' : '' }, h('td', { class: 'pr' }, h('img', { src: cat.imageUrl(r, 'small'), alt: '', width: 32, height: 44, loading: 'lazy', crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg' }),
+            h('span', null, h('b', null, c.setName), h('small', { class: 'mono' }, `${c.set.toUpperCase()} ${c.no} · ${cat.meta(r).released.slice(0, 4)}`))),
+            h('td', null, c.sp ? c.sp.split(', ').map((t) => h('span', { class: 'chip c', style: 'margin:0 4px 4px 0' }, t)) : h('span', { class: 'mut' }, 'regular')),
+            h('td', { class: 'num mono' }, p ? cat.fmt(p.cents) : '–'),
+            h('td', { class: 'acts' }, isCur ? h('span', { class: 'chip a' }, 'in use') : h('button', { class: 'btn sm', type: 'button', onclick: () => close({ set: c.set, no: c.no }) }, 'Use this printing')));
+        })))),
+      h('div', { class: 'acts' }, cur ? h('button', { class: 'btn', type: 'button', onclick: () => close({ set: '', no: '' }) }, 'Back to the newest printing') : null, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Close'))), { wide: true, label: `Printings of ${card}` });
+    if (res) { db.setPrint(current, card, res.set, res.no); toast(res.set ? `${card}: ${res.set.toUpperCase()} ${res.no}` : `${card}: newest printing`); }
+  }
+  async function addToAnotherDeck(card) {
+    const others = Object.keys(db.get().decks).filter((n) => n !== current).sort((a, b) => a.localeCompare(b));
+    if (!others.length) { toast('You have no other deck yet'); return; }
+    const res = await dialog((close) => {
+      const deckSel = h('select', { class: 'input', autofocus: true }, others.map((n) => h('option', { value: n }, n)));
+      const boardSel = h('select', { class: 'input' }, db.BOARDS.map(([b, n]) => h('option', { value: b, selected: b === view.board }, n)));
+      const qty = h('input', { class: 'input', type: 'number', min: 1, max: 99, value: 1, 'aria-label': 'How many' });
+      return h('form', { onsubmit: (e) => { e.preventDefault(); close({ deck: deckSel.value, board: boardSel.value, qty: Math.max(1, Math.min(99, Math.floor(+qty.value) || 1)) }); } },
+        h('h2', null, `Add ${card} to another deck`), h('label', { class: 'field' }, h('span', null, 'Deck'), deckSel), h('label', { class: 'field' }, h('span', null, 'Board'), boardSel), h('label', { class: 'field' }, h('span', null, 'How many'), qty),
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Add')));
+    }, { label: 'Add to another deck' });
+    if (res) { db.bumpBoard(res.deck, res.board, card, res.qty); toast(`Added ${res.qty} ${card} to ${res.deck}`); }
+  }
+  async function addToCollection(card) {
+    const bnames = db.get().binders;
+    const res = await dialog((close) => {
+      const sel = h('select', { class: 'input', autofocus: true }, h('option', { value: '' }, 'Unsorted (no binder)'), bnames.map((b) => h('option', { value: b }, b)), h('option', { value: '\0new' }, '+ New binder…'));
+      const nm = h('input', { class: 'input', placeholder: 'New binder name', hidden: true, autocomplete: 'off' });
+      sel.onchange = () => { nm.hidden = sel.value !== '\0new'; if (!nm.hidden) nm.focus(); };
+      return h('form', { onsubmit: (e) => { e.preventDefault(); const nw = sel.value === '\0new', v = nw ? nm.value.trim() : sel.value; if (nw && !v) return; close({ binder: v }); } },
+        h('h2', null, `Add ${card} to your collection`), h('p', null, 'Adds one copy to your inventory. Use this for a card you own.'),
+        h('label', { class: 'field' }, h('span', null, 'Put it in'), sel), nm,
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Add to inventory')));
+    }, { label: 'Add to collection' });
+    if (!res) return;
+    const r = catReady ? chosenRow(card) : null, i = r != null ? cat.rowInfo(r) : null;
+    col.addEntries([{ name: card, sp: i?.sp || '', set: i?.set || '', no: i?.no || '', qty: 1, foil: 0 }], { binder: res.binder || undefined }); toast(`Added ${card} to ${res.binder || 'your inventory'}`);
+  }
+  async function addToWishList(card) {
+    const res = await pickListDialog(`Add ${card} to a list`, 'It is added to the list you choose (a wishlist or buylist).', 'Add'); if (!res) return;
+    db.newList(res.list); db.addToList(res.list, { [card]: 1 }); toast(`Added ${card} to ${res.list}`);
+  }
+  async function bulkCategory(cards) {
+    const used = db.deckTagList(current), sugg = PRESET_CATS.filter((t) => !used.includes(t));
+    const res = await dialog((close) => {
+      const input = h('input', { class: 'input', placeholder: 'Ramp, Removal', autocomplete: 'off', autofocus: true, 'aria-label': 'Categories' });
+      const add = (t) => { const cur = input.value.split(',').map((x) => x.trim()).filter(Boolean); if (!cur.some((x) => x.toLowerCase() === t.toLowerCase())) cur.push(t); input.value = cur.join(', '); input.focus(); };
+      const chips = (title, list) => list.length ? h('div', { class: 'tagchips', style: 'margin:8px 0' }, h('span', { class: 'hint' }, title), list.map((t) => h('button', { type: 'button', class: 'tagchip c-' + db.tagColor(t), onclick: () => add(t) }, t))) : null;
+      return h('form', { onsubmit: (e) => { e.preventDefault(); const t = input.value.split(',').map((x) => x.trim()).filter(Boolean); if (t.length) close({ tags: t }); } },
+        h('h2', null, `Add categories to ${plural(cards.length, 'card')}`), h('p', null, 'The categories are added to what each card already has. Separate several with commas.'),
+        h('label', { class: 'field' }, h('span', null, 'Categories'), input), chips('In this deck:', used), chips('Suggestions:', sugg),
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Add')));
+    }, { label: 'Add categories' });
+    if (res) { view.sel.clear(); db.addTags(current, cards, res.tags); toast(`Added ${res.tags.join(', ')} to ${plural(cards.length, 'card')}`); }
+  }
+
+  // ---- the "..." menu of a row (like Moxfield's card menu): two columns of grouped actions
+  function openCardMenu(anchor, card) {
+    document.querySelector('.cardmenu')?.remove();
+    const onMain = view.board === 'main', cmdOn = db.commandersOf(current).includes(card), enc = encodeURIComponent(card);
+    const done = (fn) => () => { close(false); fn(); };
+    const item = (label, fn, o = {}) => h('button', { type: 'button', role: 'menuitem', class: o.danger ? 'danger' : '', onclick: done(fn) }, label);
+    const link = (label, href) => h('a', { role: 'menuitem', href, target: '_blank', rel: 'noopener noreferrer', onclick: () => close(false) }, label);
+    const group = (...kids) => { const k = kids.filter(Boolean); return k.length ? h('div', { class: 'mg' }, k) : null; };
+    const move = db.BOARDS.filter(([b]) => b !== view.board).map(([b, n]) => item(`Move to ${n}`, () => db.moveCards(current, [card], view.board, b)));
+    const left = h('div', { class: 'mcol' },
+      group(item('Select this card', () => { view.select = true; view.sel.add(card); draw(); }), item('Switch printing…', () => switchPrinting(card))),
+      group(item('Add one', () => db.bumpBoard(current, view.board, card, 1)), item('Add more…', async () => { const n = await numberDialog(`Add more ${card}`, `How many more copies go on the ${BOARD_NAME[view.board].toLowerCase()}?`, 'Add', 4); if (n) db.bumpBoard(current, view.board, card, n); }),
+        item('Remove', () => db.removeCards(current, view.board, [card]), { danger: true })),
+      group(...move, item('Add to another deck…', () => addToAnotherDeck(card)), item('Add to collection…', () => addToCollection(card)), item('Add to wish list…', () => addToWishList(card))));
+    const right = h('div', { class: 'mcol' },
+      group(item('Change categories…', () => editTags(card)), onMain ? item(cmdOn ? 'Remove as commander' : 'Make commander', () => toggleCommander(card)) : null),
+      group(item('View details', () => { location.hash = '#/?card=' + enc; }), item('Copy card name', () => navigator.clipboard.writeText(card).then(() => toast('Card name copied'), () => toast('Could not copy')))),
+      group(link('Buy on TCGplayer', `https://www.tcgplayer.com/search/magic/product?q=${enc}&view=grid`), link('Buy on Card Kingdom', `https://www.cardkingdom.com/catalog/search?search=header&filter%5Bname%5D=${enc}`)));
+    const m = h('div', { class: 'cardmenu', role: 'menu', 'aria-label': `Actions for ${card}` }, left, right);
+    const away = (e) => { if (!m.contains(e.target) && !anchor.contains(e.target)) close(false); };
+    const key = (e) => {
+      const items = [...m.querySelectorAll('[role=menuitem]')], i = items.indexOf(document.activeElement);
+      if (e.key === 'Escape') close(); else if (e.key === 'Tab') close(false);
+      else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); } else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    };
+    function close(refocus = true) { m.remove(); anchor.setAttribute('aria-expanded', 'false'); document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key); window.removeEventListener('resize', shut); window.removeEventListener('scroll', shut, true); if (refocus) anchor.focus(); }
+    const shut = () => close(false);
+    document.body.append(m); anchor.setAttribute('aria-expanded', 'true');
+    const r = anchor.getBoundingClientRect(), w = m.offsetWidth, hgt = m.offsetHeight;      // open under the button, or above it when there is no room
+    m.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + 'px';
+    m.style.top = Math.max(8, r.bottom + 4 + hgt > innerHeight - 8 ? r.top - hgt - 4 : r.bottom + 4) + 'px';
+    m.querySelector('[role=menuitem]').focus();
+    setTimeout(() => { document.addEventListener('pointerdown', away); document.addEventListener('keydown', key); window.addEventListener('resize', shut); window.addEventListener('scroll', shut, true); }, 0);
   }
   async function importDialog(target) {
     const res = await dialog((close) => {
@@ -252,9 +377,8 @@ export function decks(root) {
     for (const c of [...view.sel]) if (!onBoard[c]) view.sel.delete(c);      // a selected card that left this board is no longer selected
     const otherBoards = db.BOARDS.filter(([b]) => b !== view.board);
     const cmds = current ? db.commandersOf(current) : [], size = current ? db.deckSize(current) : null, mainCount = total(deck);
-    const canCrown = view.board === 'main' && (size === 100 || cmds.length > 0);      // commander tools: Commander-size decks, or a deck that already has one
-    const span = 3 + (view.select ? 1 : 0) + (view.thumbs ? 1 : 0) + (canCrown ? 1 : 0);      // Need, Card, Categories, Owned are always there
-    const thumbOf = (c) => { const g = catReady ? cat.find(c) : null; return g ? g.rows[0] : null; };
+    const span = 5 + (view.select ? 1 : 0) + (view.thumbs ? 1 : 0);      // Need, Card, Categories, Owned and the menu button are always there
+    const thumbOf = (c) => (catReady ? chosenRow(c) : null);
 
     const syncSel = () => {
       for (const tr of tbody.querySelectorAll('tr[data-card]')) { const on = view.sel.has(tr.dataset.card); tr.setAttribute('aria-selected', String(on)); const cb = tr.querySelector('input[type=checkbox]'); if (cb) cb.checked = on; }
@@ -274,7 +398,7 @@ export function decks(root) {
         h('td', null, h('span', { class: 'tagchips' }, tags.map((t) => h('button', { type: 'button', class: 'tagchip c-' + db.tagColor(t), title: 'Show only this category', onclick: () => { view.tag = view.tag === t ? '' : t; draw(); } }, t)),
           h('button', { type: 'button', class: 'btn sm ghost', 'aria-label': `Edit categories of ${c}`, onclick: () => editTags(c) }, tags.length ? 'Edit' : icon('plus'), tags.length ? null : 'Category'))),
         h('td', { class: 'own' }, have(c) + (missingHere ? ` (${needs[c] - have(c)} needed)` : '')),
-        canCrown ? h('td', null, h('button', { type: 'button', class: 'btn sm crownbtn', 'aria-pressed': String(isCmd), title: isCmd ? 'Remove as commander' : 'Make commander', 'aria-label': `${isCmd ? 'Remove' : 'Make'} ${c} ${isCmd ? 'as commander' : 'a commander'}`, onclick: () => toggleCommander(c) }, icon('crown'))) : null);
+        h('td', { class: 'rm' }, h('button', { type: 'button', class: 'rowmenu', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': `Actions for ${c}`, title: 'Card actions', onclick: (e) => openCardMenu(e.currentTarget, c) }, icon('dots'))));
     };
     const matches = (c) => !view.tag || db.tagsOf(current, c).includes(view.tag);
     const cmdShown = view.board === 'main' ? cmds.filter(matches) : [];      // commanders always come first, with a crown
@@ -293,17 +417,27 @@ export function decks(root) {
       }
     }
     thead.replaceChildren(h('tr', null, view.select ? h('th', { class: 'ck' }, h('input', { type: 'checkbox', 'aria-label': 'Select all cards on this board', onchange: (e) => { for (const c of cardNames) e.target.checked ? view.sel.add(c) : view.sel.delete(c); syncSel(); } })) : null,
-      view.thumbs ? h('th', { class: 'thumb' }, h('span', { class: 'sr' }, 'Image')) : null, ['Need', 'Card', 'Categories', 'Owned'].map((t) => h('th', null, t)), canCrown ? h('th', null, 'Commander') : null));
+      view.thumbs ? h('th', { class: 'thumb' }, h('span', { class: 'sr' }, 'Image')) : null, ['Need', 'Card', 'Categories', 'Owned'].map((t) => h('th', null, t)), h('th', { class: 'rm' }, h('span', { class: 'sr' }, 'Actions'))));
     tbody.replaceChildren(...rows);
-    bulk.append(h('span', null, selCount, ' selected'), h('span', { class: 'grow' }), ...otherBoards.map(([b, n]) => h('button', { class: 'btn sm', type: 'button', onclick: () => {
+    const pickedCards = () => cardNames.filter((c) => view.sel.has(c));
+    bulk.append(h('span', null, selCount, ' selected'), h('span', { class: 'grow' }),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => { const cs = pickedCards(); if (cs.length) bulkCategory(cs); } }, icon('plus'), 'Add category'),
+      view.board === 'main' ? h('button', { class: 'btn sm', type: 'button', title: 'Mark the selected cards as commander (up to two)', onclick: () => {
+        const cs = pickedCards(), room = 2 - cmds.length; if (!cs.length) return;
+        if (cs.length > room) { toast(room > 0 ? `Only ${plural(room, 'more commander')} fit: a deck has at most two` : 'A deck has at most two commanders: remove one first'); return; }
+        view.sel.clear(); for (const c of cs) db.setCommander(current, c, true); if (db.deckSize(current) !== 100) db.setDeckSize(current, 100); toast(`${plural(cs.length, 'card')} set as commander`);
+      } }, icon('crown'), 'Make commander') : null,
+      ...otherBoards.map(([b, n]) => h('button', { class: 'btn sm', type: 'button', onclick: () => {
       const cs = cardNames.filter((c) => view.sel.has(c)); if (!cs.length) return; view.sel.clear(); const n2 = db.moveCards(current, cs, view.board, b); toast(`Moved ${plural(cs.length, 'card')} (${plural(n2, 'copy', 'copies')}) to the ${n.toLowerCase()}`);
-    } }, `Move to ${n}`)), h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { view.sel.clear(); syncSel(); } }, 'Clear'));
+    } }, `Move to ${n}`)),
+      h('button', { class: 'btn sm danger', type: 'button', onclick: async () => { const cs = pickedCards(); if (!cs.length) return; if (!(await confirmDialog({ title: 'Remove cards', text: `Take ${plural(cs.length, 'selected card')} off the ${BOARD_NAME[view.board].toLowerCase()}?`, ok: 'Remove', danger: true }))) return; view.sel.clear(); db.removeCards(current, view.board, cs); } }, icon('trash'), 'Remove'),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { view.sel.clear(); syncSel(); } }, 'Clear'));
     syncSel();
 
     // large view: hover a card for 0.2 s and a big picture opens on the right with its price and how many you own
     function showLv(c) {
       const g = catReady ? cat.find(c) : null; if (!g) return;
-      const p = cat.cheapest(c, { treat: '' }), r = p ? p.row : g.rows[0], m = cat.meta(r), tags = db.tagsOf(current, c);
+      const p = cat.cheapest(c, { treat: '' }), r = chosenRow(c) ?? g.rows[0], m = cat.meta(r), tags = db.tagsOf(current, c);
       lv.replaceChildren(h('img', { src: cat.imageUrl(r, 'normal'), alt: '', width: 300, height: 418, crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg big' }), h('h3', null, c),
         h('div', { class: 'row', style: 'gap:6px;margin:4px 0 10px' }, m.types.map((t) => h('span', { class: 'chip' }, t)), m.cmc != null ? h('span', { class: 'chip d' }, `mana value ${m.cmc}`) : null, tags.map((t) => h('span', { class: 'tagchip c-' + db.tagColor(t) }, t))),
         h('div', { class: 'lvgrid' }, h('span', null, 'Price'), h('b', { class: 'mono' }, p ? cat.fmt(p.cents) : '–'), h('span', null, 'In this deck'), h('b', null, db.BOARDS.map(([b, n]) => `${n.split(' ')[0]} ${db.board(current, b)[c] || 0}`).join(' · ')), h('span', null, 'You own'), h('b', { class: 'mono' }, have(c))));
@@ -396,16 +530,7 @@ export function decks(root) {
     const toListBtn = h('button', { class: 'btn sm', type: 'button', onclick: saveMissingToList }, icon('list'), 'Save to a list');
     async function saveMissingToList() {
       const miss = Object.fromEntries(shown.filter((e) => e.missing > 0).map((e) => [e.name, e.missing])); if (!Object.keys(miss).length) return;
-      const lnames = Object.keys(db.get().lists).sort((a, b) => a.localeCompare(b));
-      const res = await dialog((close) => {
-        const sel = h('select', { class: 'input', autofocus: true }, lnames.map((n) => h('option', { value: n }, n)), h('option', { value: '\0new' }, '+ New list…'));
-        const nm = h('input', { class: 'input', placeholder: 'New list name', value: lnames.length ? '' : 'Wishlist', hidden: !!lnames.length, autocomplete: 'off' });
-        sel.onchange = () => { nm.hidden = sel.value !== '\0new'; if (!nm.hidden) nm.focus(); }; if (!lnames.length) sel.value = '\0new';
-        return h('form', { onsubmit: (e) => { e.preventDefault(); const nw = sel.value === '\0new', v = nw ? nm.value.trim() : sel.value; if (v) close({ list: v }); } },
-          h('h2', null, 'Save missing cards to a list'), h('p', null, `${plural(Object.keys(miss).length, 'card')} you still need are added to the list you choose (quantities add up if a card is already on it).`),
-          h('label', { class: 'field' }, h('span', null, 'List'), sel), nm,
-          h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
-      }, { label: 'Save missing cards to a list' });
+      const res = await pickListDialog('Save missing cards to a list', `${plural(Object.keys(miss).length, 'card')} you still need are added to the list you choose (quantities add up if a card is already on it).`, 'Save');
       if (!res) return; db.newList(res.list); db.addToList(res.list, miss); toast(`Saved ${plural(Object.keys(miss).length, 'card')} to ${res.list}`);
     }
 

@@ -5,6 +5,7 @@
 //           The commander is a card of the main deck marked in cmd (at most two: partners), so it counts toward the deck size.
 //   binders [name]  folders for owned copies; a copy is in a binder when row.binder === name, otherwise it is "Unsorted"
 //   lists   { list: { card: qty } }  cards you do not own (wishlist, buylist ...)
+//           prints: {card: 'set:number'}  the printing you picked for a card (shown in the deck; the price shown is still the cheapest).
 //   tagColors { category: colorName }  the color of a deck category (default violet), the same in every deck
 // Rows use the same columns as the desktop scanner's scans.csv, so a scans.csv can be imported as is.
 export const COLS = ['name', 'special_print', 'best_guess_set', 'collector_number', 'timestamp'];
@@ -108,6 +109,24 @@ export function moveCards(deck, cards, from, to) {      // move every copy of ea
   for (const c of cards) { const q = src[c] || 0; if (!q) continue; delete src[c]; dst[c] = (dst[c] || 0) + q; n += q; }
   tidyDeck(deck); save(); return n;
 }
+export const printOf = (deck, card) => { const v = ((state.deckx[deck] || {}).prints || {})[card]; if (!v) return null; const i = v.indexOf(':'); return { set: v.slice(0, i), no: v.slice(i + 1) }; };
+export function setPrint(deck, card, set, no) {      // set '' = back to the default printing
+  if (!state.decks[deck]) return;
+  const x = (state.deckx[deck] ||= {}); x.prints ||= {};
+  if (set) x.prints[card] = `${set}:${no}`; else delete x.prints[card];
+  tidyDeck(deck); save();
+}
+export function removeCards(deck, board, cards) {      // take every copy of each card off a board, one save
+  if (!state.decks[deck]) return 0; const b = ensureBoard(deck, board); let n = 0;
+  for (const c of cards) if (b[c]) { n += b[c]; delete b[c]; }
+  tidyDeck(deck); save(); return n;
+}
+export function addTags(deck, cards, tags) {      // add categories to several cards, one save
+  if (!state.decks[deck]) return;
+  const x = (state.deckx[deck] ||= {}); x.tags ||= {};
+  for (const c of cards) x.tags[c] = [...new Set([...(x.tags[c] || []), ...tags.map((t) => t.trim()).filter(Boolean)])];
+  tidyDeck(deck); save();
+}
 export function setTags(deck, card, tags) {
   if (!state.decks[deck]) return;
   const t = [...new Set(tags.map((x) => x.trim()).filter(Boolean))];
@@ -128,9 +147,10 @@ function tidyDeck(deck) {      // drop empty boards, a commander that left the m
   for (const b of ['side', 'maybe']) if (x[b] && !Object.keys(x[b]).length) delete x[b];
   const main = state.decks[deck] || {};
   if (x.cmd) { x.cmd = x.cmd.filter((c) => main[c]); if (!x.cmd.length) delete x.cmd; }
-  if (x.tags) {
-    for (const c of Object.keys(x.tags)) if (!['main', 'side', 'maybe'].some((b) => (b === 'main' ? main : x[b] || {})[c])) delete x.tags[c];
-    if (!Object.keys(x.tags).length) delete x.tags;
+  const inDeck = (c) => ['main', 'side', 'maybe'].some((b) => (b === 'main' ? main : x[b] || {})[c]);
+  for (const k of ['tags', 'prints']) if (x[k]) {
+    for (const c of Object.keys(x[k])) if (!inDeck(c)) delete x[k][c];
+    if (!Object.keys(x[k]).length) delete x[k];
   }
   if (!Object.keys(x).length) delete state.deckx[deck];
 }
