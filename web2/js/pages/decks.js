@@ -6,7 +6,12 @@ import * as col from '../collection.js';
 import { computeStats, renderStats, TYPE_ORDER, COLOR_ORDER } from '../deckstats.js';
 
 let current = null;   // selected deck (survives re-renders)
-const view = { tab: 'decks', sub: 'cards', mode: 'sum', only: true, q: '', board: 'main', group: 'type', tag: '', addCat: '', collapsed: new Set() };   // tab state survives data refreshes
+const VKEY = 'magiccv2.deck.view';      // the switches survive reloads
+const saved = (() => { try { return JSON.parse(localStorage.getItem(VKEY)) || {}; } catch { return {}; } })();
+const view = { tab: 'decks', sub: 'cards', mode: 'sum', only: true, q: '', board: 'main', group: 'type', tag: '', addCat: '', collapsed: new Set(),
+  select: false, sel: new Set(), highlight: saved.highlight !== false, thumbs: saved.thumbs !== false, large: !!saved.large };
+const keepView = () => { try { localStorage.setItem(VKEY, JSON.stringify({ highlight: view.highlight, thumbs: view.thumbs, large: view.large })); } catch { /* not remembered */ } };
+let lvTimer = 0;   // tab state survives data refreshes
 let catReady = false;  // once loaded the catalog stays, so later redraws are instant
 const BOARD_NAME = Object.fromEntries(db.BOARDS);
 // categories to pick from in one click (any other name works too). A card can have several; a deck lists them as groups, in every board.
@@ -24,7 +29,7 @@ export function decks(root) {
   const needs = current ? db.deckNeeds(current) : {};
   const need = total(needs), missing = Object.keys(needs).reduce((n, c) => n + Math.max(0, needs[c] - have(c)), 0);
   const playing = () => deck;      // the statistics cover the main deck (commander included)
-  const select = (n) => { current = n; view.board = 'main'; view.tag = ''; db.save(); };
+  const select = (n) => { current = n; view.board = 'main'; view.tag = ''; view.sel.clear(); db.save(); };
 
   async function create() {
     const res = await dialog((close) => {
@@ -193,8 +198,50 @@ export function decks(root) {
     return [land ? [100, 'Lands'] : cols.length === 0 ? [50, 'Colorless'] : cols.length > 1 ? [10, 'Multicolor: ' + cols.join(', ')] : [COLOR_ORDER.findIndex(([, n]) => n === cols[0]), cols[0]]];
   }
 
+  // ---- category colors: pick one of eight for each category used in this deck (the color is the same in every deck)
+  async function categoryColors() {
+    const used = db.deckTagList(current); if (!used.length) { toast('No categories yet: give a card a category first'); return; }
+    await dialog((close) => h('div', null, h('h2', null, 'Category colors'), h('p', null, 'Choose a color for each category. It shows on the chips and the group headers.'),
+      h('div', { class: 'colorlist' }, used.map((t) => {
+        const chip = h('span', { class: 'tagchip c-' + db.tagColor(t) }, t), sw = [];
+        const row = h('div', { class: 'colorrow' }, chip, h('span', { class: 'swatches', role: 'group', 'aria-label': `Color of ${t}` }, db.TAG_COLORS.map((c) => {
+          const b = h('button', { type: 'button', class: 'swatch c-' + c, 'aria-label': c, 'aria-pressed': String(db.tagColor(t) === c), onclick: () => { db.setTagColor(t, c); chip.className = 'tagchip c-' + c; sw.forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } });
+          sw.push(b); return b;
+        })));
+        return row;
+      })), h('div', { class: 'acts' }, h('button', { class: 'btn primary', type: 'button', onclick: () => close(true) }, 'Done'))), { label: 'Category colors' });
+  }
+
+  // ---- categories (stored as tags): Ramp, Removal, Card Draw ... A card can have several; pick suggestions or type your own, separated by commas.
+  async function editTags(card) {
+    const used = db.deckTagList(current), now = db.tagsOf(current, card), sugg = PRESET_CATS.filter((t) => !used.includes(t));
+    const res = await dialog((close) => {
+      const input = h('input', { class: 'input', value: now.join(', '), placeholder: 'Ramp, Removal', autocomplete: 'off', autofocus: true, 'aria-label': 'Categories' });
+      const add = (t) => { const cur = input.value.split(',').map((x) => x.trim()).filter(Boolean); if (!cur.some((x) => x.toLowerCase() === t.toLowerCase())) cur.push(t); input.value = cur.join(', '); input.focus(); };
+      const chips = (title, list) => list.length ? h('div', { class: 'tagchips', style: 'margin:8px 0' }, h('span', { class: 'hint' }, title), list.map((t) => h('button', { type: 'button', class: 'tagchip c-' + db.tagColor(t), onclick: () => add(t) }, t))) : null;
+      return h('form', { onsubmit: (e) => { e.preventDefault(); close({ tags: input.value.split(',') }); } },
+        h('h2', null, `Categories for ${card}`), h('p', null, 'Categories split a board into groups, like Ramp, Removal or Card Draw. A card can be in several. Separate them with commas.'),
+        h('label', { class: 'field' }, h('span', null, 'Categories'), input), chips('In this deck:', used), chips('Suggestions:', sugg),
+        h('div', { class: 'acts' }, h('button', { class: 'btn', type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
+    }, { label: `Categories for ${card}` });
+    if (res) db.setTags(current, card, res.tags);
+  }
+
+  // ---- grouping of the card table: returns the groups a card belongs to, [[order, label], ...]. A card with several categories shows in each of them.
+  function groupOf(card) {
+    const g = view.group;
+    if (g === 'tag') { const t = db.tagsOf(current, card); return t.length ? t.map((x) => [1, x]) : [[2, 'Uncategorized']]; }
+    const f = cat.find(card); if (!f) return [[99, 'Not found in the card data']];
+    const m = cat.meta(f.rows[0]), land = m.types.includes('Land');
+    if (g === 'type') { const k = land ? 'Land' : m.types.includes('Creature') ? 'Creature' : TYPE_ORDER.find((x) => m.types.includes(x)); return [[k ? TYPE_ORDER.indexOf(k) : 98, k || 'Other']]; }
+    if (g === 'cmc') return [land ? [100, 'Lands'] : [m.cmc ?? 0, `Mana value ${m.cmc ?? 0}`]];
+    const cols = COLOR_ORDER.filter(([k]) => m.colors.includes(k)).map(([, n]) => n);      // color
+    return [land ? [100, 'Lands'] : cols.length === 0 ? [50, 'Colorless'] : cols.length > 1 ? [10, 'Multicolor: ' + cols.join(', ')] : [COLOR_ORDER.findIndex(([, n]) => n === cols[0]), cols[0]]];
+  }
+
   // ---- Decks tab
   function decksTab() {
+    clearTimeout(lvTimer); lvTimer = 0;
     const list = h('section', { class: 'card', 'aria-label': 'Your decks' },
       h('div', { class: 'hd' }, icon('decks'), h('h2', null, 'Decks')),
       h('div', { class: 'decklist' }, names.length ? names.map((n) => h('button', { class: 'deckbtn', type: 'button', 'aria-current': n === current ? 'true' : null, onclick: () => select(n) }, h('span', null, n), h('small', null, total(db.deckNeeds(n))))) : [h('p', { class: 'hint', style: 'padding:8px' }, 'No decks yet.')]),
@@ -202,38 +249,73 @@ export function decks(root) {
 
     const onBoard = current ? db.board(current, view.board) : {};       // read here, not once per page load: the board tab changes without a data change
     const cardNames = Object.keys(onBoard).sort((a, b) => a.localeCompare(b));
+    for (const c of [...view.sel]) if (!onBoard[c]) view.sel.delete(c);      // a selected card that left this board is no longer selected
     const otherBoards = db.BOARDS.filter(([b]) => b !== view.board);
     const cmds = current ? db.commandersOf(current) : [], size = current ? db.deckSize(current) : null, mainCount = total(deck);
     const canCrown = view.board === 'main' && (size === 100 || cmds.length > 0);      // commander tools: Commander-size decks, or a deck that already has one
+    const span = 3 + (view.select ? 1 : 0) + (view.thumbs ? 1 : 0) + (canCrown ? 1 : 0);      // Need, Card, Categories, Owned are always there
+    const thumbOf = (c) => { const g = catReady ? cat.find(c) : null; return g ? g.rows[0] : null; };
+
+    const syncSel = () => {
+      for (const tr of tbody.querySelectorAll('tr[data-card]')) { const on = view.sel.has(tr.dataset.card); tr.setAttribute('aria-selected', String(on)); const cb = tr.querySelector('input[type=checkbox]'); if (cb) cb.checked = on; }
+      const all = thead.querySelector('input'); if (all) { const n = cardNames.filter((c) => view.sel.has(c)).length; all.checked = n > 0 && n === cardNames.length; all.indeterminate = n > 0 && n < cardNames.length; }
+      bulk.hidden = !view.select || !view.sel.size; selCount.textContent = view.sel.size;
+    };
+    const tbody = h('tbody'), thead = h('thead'), bulk = h('div', { class: 'bulk', hidden: true, role: 'region', 'aria-label': 'Selected cards' }), selCount = h('b', { class: 'mono' });
+    const lv = h('aside', { class: 'lv', hidden: true, 'aria-hidden': 'true' });
+
     const row = (c) => {
-      const q = onBoard[c], tags = db.tagsOf(current, c), isCmd = cmds.includes(c), missingHere = view.board !== 'maybe' && have(c) < (needs[c] || 0);
-      return h('tr', { class: (missingHere ? 'miss ' : '') + (isCmd ? 'is-cmd' : '') },
+      const q = onBoard[c], tags = db.tagsOf(current, c), isCmd = cmds.includes(c), missingHere = view.board !== 'maybe' && have(c) < (needs[c] || 0), tr = thumbOf(c);
+      return h('tr', { 'data-card': c, 'aria-selected': 'false', class: (missingHere && view.highlight ? 'miss ' : '') + (isCmd ? 'is-cmd' : '') },
+        view.select ? h('td', { class: 'ck' }, h('input', { type: 'checkbox', 'aria-label': `Select ${c}`, onchange: (e) => { e.target.checked ? view.sel.add(c) : view.sel.delete(c); syncSel(); } })) : null,
+        view.thumbs ? h('td', { class: 'thumb' }, tr != null ? h('img', { src: cat.imageUrl(tr, 'small'), alt: '', width: 36, height: 50, loading: 'lazy', crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg' }) : null) : null,
         h('td', null, h('span', { class: 'stepper' }, h('button', { type: 'button', 'aria-label': `One fewer ${c}`, onclick: () => db.bumpBoard(current, view.board, c, -1) }, '−'), h('b', null, q), h('button', { type: 'button', 'aria-label': `One more ${c}`, onclick: () => db.bumpBoard(current, view.board, c, 1) }, '+'))),
         h('td', { class: 'nm' }, isCmd ? h('span', { class: 'crown', title: 'Commander' }, icon('crown', 'Commander')) : null, c),
-        h('td', null, h('span', { class: 'tagchips' }, tags.map((t) => h('button', { type: 'button', class: 'tagchip', title: 'Show only this category', onclick: () => { view.tag = view.tag === t ? '' : t; draw(); } }, t)),
+        h('td', null, h('span', { class: 'tagchips' }, tags.map((t) => h('button', { type: 'button', class: 'tagchip c-' + db.tagColor(t), title: 'Show only this category', onclick: () => { view.tag = view.tag === t ? '' : t; draw(); } }, t)),
           h('button', { type: 'button', class: 'btn sm ghost', 'aria-label': `Edit categories of ${c}`, onclick: () => editTags(c) }, tags.length ? 'Edit' : icon('plus'), tags.length ? null : 'Category'))),
-        h('td', { class: 'own' }, have(c) + (missingHere ? `  (need ${needs[c] - have(c)} more)` : '')),
-        h('td', null, h('span', { class: 'rowacts' },
-          canCrown ? h('button', { type: 'button', class: 'btn sm crownbtn', 'aria-pressed': String(isCmd), title: isCmd ? 'Remove as commander' : 'Make commander', 'aria-label': `${isCmd ? 'Remove' : 'Make'} ${c} ${isCmd ? 'as commander' : 'a commander'}`, onclick: () => toggleCommander(c) }, icon('crown')) : null,
-          h('select', { class: 'input bd-move', 'aria-label': `Move ${c} to another board`, onchange: (e) => { if (e.target.value) db.moveCard(current, c, view.board, e.target.value, q); } },
-            h('option', { value: '' }, 'Move to…'), otherBoards.map(([b, n]) => h('option', { value: b }, n))))));
+        h('td', { class: 'own' }, have(c) + (missingHere ? ` (${needs[c] - have(c)} needed)` : '')),
+        canCrown ? h('td', null, h('button', { type: 'button', class: 'btn sm crownbtn', 'aria-pressed': String(isCmd), title: isCmd ? 'Remove as commander' : 'Make commander', 'aria-label': `${isCmd ? 'Remove' : 'Make'} ${c} ${isCmd ? 'as commander' : 'a commander'}`, onclick: () => toggleCommander(c) }, icon('crown'))) : null);
     };
     const matches = (c) => !view.tag || db.tagsOf(current, c).includes(view.tag);
     const cmdShown = view.board === 'main' ? cmds.filter(matches) : [];      // commanders always come first, with a crown
     const shown = cardNames.filter((c) => matches(c) && !cmdShown.includes(c));
     const rows = [];
-    if (cmdShown.length) { rows.push(h('tr', { class: 'bd-grp bd-cmd' }, h('td', { colspan: 5 }, icon('crown'), cmds.length > 1 ? ' Commanders' : ' Commander'))); cmdShown.forEach((c) => rows.push(row(c))); }
+    if (cmdShown.length) { rows.push(h('tr', { class: 'bd-grp bd-cmd' }, h('td', { colspan: span }, icon('crown'), cmds.length > 1 ? ' Commanders' : ' Commander'))); cmdShown.forEach((c) => rows.push(row(c))); }
     if (view.group === 'none' || (view.group !== 'tag' && !catReady)) shown.forEach((c) => rows.push(row(c)));
     else {
       const gm = new Map();
       for (const c of shown) for (const [o, label] of groupOf(c)) { let g = gm.get(label); if (!g) gm.set(label, g = { o, cards: [] }); g.cards.push(c); }
       for (const [label, g] of [...gm].sort((a, b) => a[1].o - b[1].o || a[0].localeCompare(b[0]))) {
         const key = `${current}|${view.board}|${label}`, open = !view.collapsed.has(key);
-        rows.push(h('tr', { class: 'bd-grp' }, h('td', { colspan: 5 }, h('button', { type: 'button', class: 'grpbtn', 'aria-expanded': String(open), onclick: () => { open ? view.collapsed.add(key) : view.collapsed.delete(key); draw(); } },
-          icon(open ? 'down' : 'up'), `${label}  ·  ${plural(g.cards.reduce((n, c) => n + onBoard[c], 0), 'card')}`))));
+        rows.push(h('tr', { class: 'bd-grp' }, h('td', { colspan: span }, h('button', { type: 'button', class: 'grpbtn', 'aria-expanded': String(open), onclick: () => { open ? view.collapsed.add(key) : view.collapsed.delete(key); draw(); } },
+          icon(open ? 'down' : 'up'), view.group === 'tag' && g.o === 1 ? h('i', { class: 'tcdot c-' + db.tagColor(label) }) : null, `${label}  ·  ${plural(g.cards.reduce((n, c) => n + onBoard[c], 0), 'card')}`))));
         if (open) g.cards.forEach((c) => rows.push(row(c)));
       }
     }
+    thead.replaceChildren(h('tr', null, view.select ? h('th', { class: 'ck' }, h('input', { type: 'checkbox', 'aria-label': 'Select all cards on this board', onchange: (e) => { for (const c of cardNames) e.target.checked ? view.sel.add(c) : view.sel.delete(c); syncSel(); } })) : null,
+      view.thumbs ? h('th', { class: 'thumb' }, h('span', { class: 'sr' }, 'Image')) : null, ['Need', 'Card', 'Categories', 'Owned'].map((t) => h('th', null, t)), canCrown ? h('th', null, 'Commander') : null));
+    tbody.replaceChildren(...rows);
+    bulk.append(h('span', null, selCount, ' selected'), h('span', { class: 'grow' }), ...otherBoards.map(([b, n]) => h('button', { class: 'btn sm', type: 'button', onclick: () => {
+      const cs = cardNames.filter((c) => view.sel.has(c)); if (!cs.length) return; view.sel.clear(); const n2 = db.moveCards(current, cs, view.board, b); toast(`Moved ${plural(cs.length, 'card')} (${plural(n2, 'copy', 'copies')}) to the ${n.toLowerCase()}`);
+    } }, `Move to ${n}`)), h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { view.sel.clear(); syncSel(); } }, 'Clear'));
+    syncSel();
+
+    // large view: hover a card for 0.2 s and a big picture opens on the right with its price and how many you own
+    function showLv(c) {
+      const g = catReady ? cat.find(c) : null; if (!g) return;
+      const p = cat.cheapest(c, { treat: '' }), r = p ? p.row : g.rows[0], m = cat.meta(r), tags = db.tagsOf(current, c);
+      lv.replaceChildren(h('img', { src: cat.imageUrl(r, 'normal'), alt: '', width: 300, height: 418, crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg big' }), h('h3', null, c),
+        h('div', { class: 'row', style: 'gap:6px;margin:4px 0 10px' }, m.types.map((t) => h('span', { class: 'chip' }, t)), m.cmc != null ? h('span', { class: 'chip d' }, `mana value ${m.cmc}`) : null, tags.map((t) => h('span', { class: 'tagchip c-' + db.tagColor(t) }, t))),
+        h('div', { class: 'lvgrid' }, h('span', null, 'Price'), h('b', { class: 'mono' }, p ? cat.fmt(p.cents) : '–'), h('span', null, 'In this deck'), h('b', null, db.BOARDS.map(([b, n]) => `${n.split(' ')[0]} ${db.board(current, b)[c] || 0}`).join(' · ')), h('span', null, 'You own'), h('b', { class: 'mono' }, have(c))));
+      lv.hidden = false;
+    }
+    const hideLv = () => { clearTimeout(lvTimer); lvTimer = 0; lv.hidden = true; lv.dataset.card = ''; };
+    tbody.addEventListener('mouseover', (ev) => {
+      if (!view.large || !catReady) return; const tr = ev.target.closest('tr[data-card]'); if (!tr || tr.dataset.card === lv.dataset.card) return;
+      clearTimeout(lvTimer); lvTimer = setTimeout(() => { lv.dataset.card = tr.dataset.card; showLv(tr.dataset.card); }, 200);
+    });
+    tbody.addEventListener('mouseleave', hideLv);
+    tbody.addEventListener('focusin', (ev) => { if (!view.large || !catReady) return; const tr = ev.target.closest('tr[data-card]'); if (tr) { lv.dataset.card = tr.dataset.card; showLv(tr.dataset.card); } });
 
     const boardTabs = db.BOARDS.map(([b, n]) => [b, [n, h('small', null, total(db.board(current, b)))]]);
     const tagList = current ? db.deckTagList(current) : [];
@@ -249,21 +331,30 @@ export function decks(root) {
     const addRow = h('div', { class: 'bd-add' }, sb.el, h('label', { class: 'sel' }, 'Category', catSel),
       size === 100 || cmds.length ? h('button', { class: 'btn sm', type: 'button', disabled: cmds.length >= 2, onclick: addCommander }, icon('crown'), cmds.length ? (cmds.length >= 2 ? 'Two commanders set' : 'Add second commander') : 'Add commander') : null);
 
+    // option switches, the same style as the Inventory tab
+    const opt = (label, get, set) => { const b = h('button', { type: 'button', class: 'opt', role: 'switch', 'aria-checked': String(get()), onclick: () => { set(!get()); keepView(); draw(); } }, h('span', { 'data-t': label }, label)); return b; };
+    const selectBtn = h('button', { type: 'button', class: 'btn sm', 'aria-pressed': String(view.select), onclick: () => { view.select = !view.select; if (!view.select) view.sel.clear(); draw(); } }, icon('check'), view.select ? 'Done selecting' : 'Select cards');
+    const toggles = h('div', { class: 'tools bd-toggles' }, selectBtn,
+      opt('Card images', () => view.thumbs, (v) => { view.thumbs = v; }), opt('Large view', () => view.large, (v) => { view.large = v; }), opt('Highlight missing cards', () => view.highlight, (v) => { view.highlight = v; }));
+
     let body;
     if (view.sub === 'stats') {
       if (!catReady) body = h('div', { class: 'empty', role: 'status' }, h('h3', null, 'Loading card data…'), h('p', null, 'Statistics need the card catalog.'));
       else { const pl = playing(); body = h('div', { class: 'dx-statswrap' }, h('p', { class: 'hint', style: 'padding:12px 20px 0;margin:0' }, 'Statistics cover the main deck, commander included. The sideboard and maybeboard are not counted.'), renderStats(computeStats(pl, own, db.norm, cat), cat.fmt, priceNote(Object.keys(pl).map((c) => cat.cheapest(c, { treat: '' }))))); }
     } else {
       body = h('div', null, addRow,
-        h('div', { class: 'bd-boards' }, tabs('bdb', boardTabs, view.board, (k) => { view.board = k; draw(); }, `Boards of ${current}`),
+        h('div', { class: 'bd-boards' }, tabs('bdb', boardTabs, view.board, (k) => { view.board = k; view.sel.clear(); draw(); }, `Boards of ${current}`),
           h('label', { class: 'sel' }, 'Group by', h('select', { class: 'input', 'aria-label': 'Group cards by', onchange: (e) => { view.group = e.target.value; draw(); } },
             [['none', 'None'], ['type', 'Card type'], ['cmc', 'Mana value'], ['color', 'Color'], ['tag', 'Category']].map(([v, t]) => h('option', { value: v, selected: view.group === v }, t))))),
+        toggles,
         tagList.length ? h('div', { class: 'bd-filter', role: 'group', 'aria-label': 'Filter by category' }, h('span', { class: 'hint', style: 'align-self:center' }, 'Categories:'),
-          tagList.map((t) => h('button', { type: 'button', class: 'bchip', 'aria-pressed': String(view.tag === t), onclick: () => { view.tag = view.tag === t ? '' : t; draw(); } }, t))) : null,
+          tagList.map((t) => h('button', { type: 'button', class: 'bchip', 'aria-pressed': String(view.tag === t), onclick: () => { view.tag = view.tag === t ? '' : t; draw(); } }, h('i', { class: 'tcdot c-' + db.tagColor(t) }), t)),
+          h('button', { type: 'button', class: 'btn sm', onclick: categoryColors }, icon('palette'), 'Colors')) : null,
         h('div', { role: 'tabpanel', id: 'bdb-panel', 'aria-labelledby': `bdb-tab-${view.board}`, class: 'dx-panel' },
-          h('div', { class: 'tablewrap' }, h('table', null, h('caption', { class: 'sr' }, `${BOARD_NAME[view.board]} of ${current}`), h('thead', null, h('tr', null, ['Need', 'Card', 'Categories', 'Owned', 'Actions'].map((t) => h('th', null, t)))), h('tbody', null, rows))),
+          h('div', { class: 'tablewrap' }, h('table', null, h('caption', { class: 'sr' }, `${BOARD_NAME[view.board]} of ${current}`), thead, tbody)),
           rows.length ? null : h('div', { class: 'empty' }, icon('decks'), h('h3', null, view.tag ? `Nothing in ${view.tag} here` : `${BOARD_NAME[view.board]} is empty`),
-            h('p', null, view.board === 'main' ? (size === 100 ? 'Start with "Add commander", then search for cards above.' : 'Search for a card above, import a list, or select cards in the Inventory and use "Add to deck".') : 'Search for a card above, or use "Move to…" on a card in another board.'))));
+            h('p', null, view.board === 'main' ? (size === 100 ? 'Start with "Add commander", then search for cards above.' : 'Search for a card above, import a list, or select cards in the Inventory and use "Add to deck".') : 'Search for a card above, or turn on "Select cards" on another board and move cards here.')),
+          bulk));
     }
     const detail = current ? h('section', { class: 'card', 'aria-label': current },
       h('div', { class: 'hd' }, h('h2', null, current), h('span', { class: 'grow' }),
@@ -273,13 +364,13 @@ export function decks(root) {
         h('button', { class: 'btn sm', onclick: () => importDialog(current) }, icon('upload'), 'Import cards'),
         h('button', { class: 'btn sm', onclick: () => download(current + '.txt', db.deckText(current)) }, icon('download'), 'Export .txt'),
         h('label', { class: 'sel', style: 'margin-left:0' }, 'Deck size', h('select', { class: 'input', 'aria-label': 'Deck size', onchange: (e) => db.setDeckSize(current, +e.target.value || null) },
-          h('option', { value: '' }, 'Not set'), SIZES.map(([n, t]) => h('option', { value: n, selected: size === n }, n === 100 ? '100 (Commander)' : String(n))))),
+          h('option', { value: '' }, 'Not set'), SIZES.map(([n]) => h('option', { value: n, selected: size === n }, n === 100 ? '100 (Commander)' : String(n))))),
         h('span', { style: 'flex:1' }), h('button', { class: 'btn sm danger', onclick: del }, icon('trash'), 'Delete deck')),
       h('div', { class: 'dx-subbar' }, tabs('dxsub', [['cards', 'Cards'], ['stats', 'Stats']], view.sub, (k) => { view.sub = k; draw(); }, `View of ${current}`)),
       h('div', { role: 'tabpanel', id: 'dxsub-panel', 'aria-labelledby': `dxsub-tab-${view.sub}`, tabindex: '0', class: 'dx-panel' }, body))
       : h('section', { class: 'card' }, h('div', { class: 'empty' }, icon('decks'), h('h3', null, 'Create or import a deck'), h('p', null, 'Decks show which cards you already own (green) and which you still need (red).'),
         h('div', { class: 'row', style: 'justify-content:center;margin-top:8px' }, h('button', { class: 'btn primary', onclick: create }, icon('plus'), 'New deck'), h('button', { class: 'btn', onclick: () => importDialog() }, icon('upload'), 'Import a list'))));
-    return h('div', { class: 'decks' }, list, detail);
+    return h('div', { class: 'decks' }, list, detail, lv);
   }
 
   // ---- Wishlist tab

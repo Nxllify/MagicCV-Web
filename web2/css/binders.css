@@ -48,3 +48,19 @@ tr.is-cmd td { background: color-mix(in srgb, var(--warn) 7%, transparent); }
 .dx-panel .tagchips .btn.sm { white-space: nowrap; }
 #dx-panel .decks { grid-template-columns: 230px minmax(0, 1fr); }
 @media (max-width: 1100px) { #dx-panel .decks { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- category colors: --tc is the color; chips, dots and swatches all read it */
+.tagchip, .tcdot, .swatch { --tc: var(--violet); }
+.c-blue { --tc: var(--info); } .c-green { --tc: var(--accent-hi); } .c-amber { --tc: var(--warn); } .c-red { --tc: var(--danger-text); } .c-pink { --tc: #f472b6; } .c-teal { --tc: #2dd4bf; } .c-gray { --tc: var(--text-muted); }
+.tagchip { border-color: color-mix(in srgb, var(--tc) 42%, transparent); background: color-mix(in srgb, var(--tc) 14%, transparent); color: var(--tc); }
+button.tagchip:hover { background: color-mix(in srgb, var(--tc) 26%, transparent); }
+.tcdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--tc); flex: none; }
+.colorlist { display: grid; gap: 10px; margin: 12px 0; }
+.colorrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.swatches { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.swatch { width: 32px; height: 32px; border: 2px solid transparent; border-radius: 50%; background: var(--tc); cursor: pointer; }
+.swatch[aria-pressed=true] { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg) inset; }
+.swatch:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.bd-toggles { padding: 8px 20px; gap: 4px 14px; border-bottom: 1px solid var(--line); }
+.dx-panel .bulk { margin: 12px; }
+td.thumb, th.thumb { width: 52px; padding: 4px 6px; }

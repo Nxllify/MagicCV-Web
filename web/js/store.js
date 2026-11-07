@@ -5,13 +5,14 @@
 //           The commander is a card of the main deck marked in cmd (at most two: partners), so it counts toward the deck size.
 //   binders [name]  folders for owned copies; a copy is in a binder when row.binder === name, otherwise it is "Unsorted"
 //   lists   { list: { card: qty } }  cards you do not own (wishlist, buylist ...)
+//   tagColors { category: colorName }  the color of a deck category (default violet), the same in every deck
 // Rows use the same columns as the desktop scanner's scans.csv, so a scans.csv can be imported as is.
 export const COLS = ['name', 'special_print', 'best_guess_set', 'collector_number', 'timestamp'];
 const KEY = 'magiccv.db.1';
 const listeners = new Set();
 
-const seed = () => ({ v: 2, rows: [], decks: {}, deckx: {}, binders: [], lists: {}, user: null, sample: false });
-const fill = (d) => { d.decks ||= {}; d.deckx ||= {}; d.binders ||= []; d.lists ||= {}; migrate(d); return d; };      // data saved by an older version has no deckx / binders / lists
+const seed = () => ({ v: 2, rows: [], decks: {}, deckx: {}, binders: [], lists: {}, tagColors: {}, user: null, sample: false });
+const fill = (d) => { d.decks ||= {}; d.deckx ||= {}; d.binders ||= []; d.lists ||= {}; d.tagColors ||= {}; migrate(d); return d; };      // data saved by an older version has no deckx / binders / lists
 function migrate(d) {      // v2: the commander moved from its own board (deckx.commander) into the main deck, marked in deckx.cmd
   if (d.v >= 2) return;
   for (const [name, x] of Object.entries(d.deckx)) if (x.commander) {
@@ -101,6 +102,12 @@ export function moveCard(deck, card, from, to, qty = 1) {      // move qty copie
   const dst = ensureBoard(deck, to); dst[card] = (dst[card] || 0) + n;
   tidyDeck(deck); save();
 }
+export function moveCards(deck, cards, from, to) {      // move every copy of each card to another board in one save; returns how many copies moved
+  if (!state.decks[deck] || from === to) return 0;
+  const src = ensureBoard(deck, from), dst = ensureBoard(deck, to); let n = 0;
+  for (const c of cards) { const q = src[c] || 0; if (!q) continue; delete src[c]; dst[c] = (dst[c] || 0) + q; n += q; }
+  tidyDeck(deck); save(); return n;
+}
 export function setTags(deck, card, tags) {
   if (!state.decks[deck]) return;
   const t = [...new Set(tags.map((x) => x.trim()).filter(Boolean))];
@@ -108,6 +115,9 @@ export function setTags(deck, card, tags) {
   if (t.length) x.tags[card] = t; else delete x.tags[card];
   tidyDeck(deck); save();
 }
+export const TAG_COLORS = ['violet', 'blue', 'green', 'amber', 'red', 'pink', 'teal', 'gray'];
+export const tagColor = (name) => (TAG_COLORS.includes(state.tagColors[name]) ? state.tagColors[name] : 'violet');
+export function setTagColor(name, color) { if (color === 'violet' || !TAG_COLORS.includes(color)) delete state.tagColors[name]; else state.tagColors[name] = color; save(); }
 export const tagsOf = (deck, card) => ((state.deckx[deck] || {}).tags || {})[card] || [];
 export function deckTagList(deck) {      // every tag used in a deck, most used first
   const m = new Map(); for (const t of Object.values((state.deckx[deck] || {}).tags || {})) for (const k of t) m.set(k, (m.get(k) || 0) + 1);
@@ -212,7 +222,7 @@ export const exportJson = () => JSON.stringify(state, null, 1);
 export function importJson(text) {
   const d = JSON.parse(text);
   if (!d || !Array.isArray(d.rows)) throw new Error('Not a MagicCV database file.');
-  state = fill({ v: d.v, rows: d.rows, decks: d.decks || {}, deckx: d.deckx || {}, binders: d.binders || [], lists: d.lists || {}, user: state.user, sample: false });
+  state = fill({ v: d.v, rows: d.rows, decks: d.decks || {}, deckx: d.deckx || {}, binders: d.binders || [], lists: d.lists || {}, tagColors: d.tagColors || {}, user: state.user, sample: false });
   for (const r of state.rows) if (r.binder && !state.binders.includes(r.binder)) state.binders.push(r.binder);      // a copy never points at a binder that does not exist
   save();
 }
