@@ -437,7 +437,7 @@ export function decks(root) {
       const kids = [];
       if (cmdShown.length) {
         kids.push(h('section', { class: 'dk-grp dk-cmd', 'aria-label': cmds.length > 1 ? 'Commanders' : 'Commander' }, h('h3', { class: 'dk-gh dk-gh-cmd' }, icon('crown'), cmds.length > 1 ? 'Commanders' : 'Commander'),
-          h('div', { class: 'dk-cmdbody' }, catReady ? h('div', { class: 'dk-cmdimgs' }, cmdShown.map((c) => { const r = chosenRow(c); return r != null ? h('img', { src: cat.imageUrl(r, 'small'), alt: c, width: 146, height: 204, loading: 'lazy', crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg' }) : null; })) : null,
+          h('div', { class: 'dk-cmdbody' }, catReady ? h('div', { class: 'dk-cmdimgs' }, cmdShown.map((c) => { const r = chosenRow(c); return r != null ? h('img', { src: cat.imageUrl(r, 'normal'), alt: c, width: 216, height: 301, loading: 'lazy', crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg' }) : null; })) : null,
             h('ul', { class: 'dk-list' }, cmdShown.map(row)))));
       }
       if (view.group === 'none' || (view.group !== 'tag' && view.group !== 'auto' && !catReady)) {
@@ -493,7 +493,9 @@ export function decks(root) {
     }
     const hideLv = () => { clearTimeout(lvTimer); lvTimer = 0; lv.hidden = true; lv.dataset.card = ''; };
     listWrap.addEventListener('mouseover', (ev) => {
-      if (!view.large || !catReady) return; const tr = ev.target.closest('li[data-card]'); if (!tr || tr.dataset.card === lv.dataset.card) return;
+      if (!view.large || !catReady) return; const tr = ev.target.closest('li[data-card]'); if (!tr) return;
+      if (tr.closest('.dk-cmd') && !ev.target.closest('.dk-name')) { hideLv(); return; }      // the commander rows are wide: only the name itself opens the big card
+      if (tr.dataset.card === lv.dataset.card) return;
       clearTimeout(lvTimer); lvTimer = setTimeout(() => { lv.dataset.card = tr.dataset.card; showLv(tr.dataset.card, tr); }, 200);
     });
     listWrap.addEventListener('mouseleave', hideLv);

@@ -105,3 +105,12 @@
 .tools.dk-filter .search { flex: 0 1 170px; max-width: 170px; }
 .tools.dk-filter { gap: 8px; }
 .dk-size { white-space: nowrap; } .dk-size .input { flex: 1; min-width: 0; }
+
+/* commander art about 75% larger (112x156 -> 196x273); wraps on narrow screens */
+.dk-cmdimgs { flex-wrap: wrap; }
+.dk-cmdimgs .cimg { width: 196px; height: 273px; }
+@media (max-width: 760px) { .dk-cmdimgs .cimg { width: 168px; height: 234px; } }
+
+/* commander art another 10% larger, from the 'normal' (488 px) Scryfall image so it stays sharp */
+.dk-cmdimgs .cimg { width: 216px; height: 301px; }
+@media (max-width: 760px) { .dk-cmdimgs .cimg { width: 185px; height: 258px; } }
