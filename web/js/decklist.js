@@ -13,6 +13,7 @@ export function cleanName(raw) {
     .replace(/\s+#\S+/g, '')                         // #tags
     .replace(/\s+\([A-Za-z0-9]{2,6}\)(?:\s+[\w★-]+)?\s*$/, '')   // (SET) 123
     .replace(/\s+\((?:foil|etched|nonfoil)\)\s*$/i, '')
+    .replace(/\s+\/{1,2}\s+/g, ' // ')                // "A / B" and "A // B" are the same card (catalog name: A // B)
     .replace(/\s+/g, ' ').trim();
 }
 

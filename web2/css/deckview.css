@@ -1,0 +1,107 @@
+/* deckview: the compact, multi-column card list of the Decks page (uses the tokens in style.css) */
+
+/* ---- cost to complete */
+.dk-cost { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.dk-cost .grow { flex: 1; }
+.dk-costn { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.dk-costn b { font-size: 20px; color: var(--accent-hi); }
+
+/* ---- filters */
+.dk-filter { padding: 8px 20px; gap: 8px 12px; border-bottom: 1px solid var(--line); }
+.dk-filter .search { flex: 1 1 200px; max-width: 280px; }
+.cchips { display: inline-flex; gap: 4px; }
+.cchip { --cc: var(--text-muted); display: inline-grid; place-items: center; width: 36px; height: 36px; border: 2px solid color-mix(in srgb, var(--cc) 55%, transparent); border-radius: 50%; background: color-mix(in srgb, var(--cc) 14%, transparent); color: var(--text); font: 600 13px var(--mono); cursor: pointer; }
+.cchip:hover { background: color-mix(in srgb, var(--cc) 30%, transparent); }
+.cchip[aria-pressed=true] { background: var(--cc); border-color: var(--text); color: #0f172a; }
+.cchip:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.pW { --cc: #e8e2c8; } .pU { --cc: #38bdf8; } .pB { --cc: #a78bfa; } .pR { --cc: #ef4444; } .pG { --cc: #22c55e; } .pC { --cc: #94a3b8; }
+
+/* ---- the list: groups flow into columns, a commander section spans them all */
+.dk-wrap { padding: 14px 20px 20px; }
+.dk-cols { column-width: 340px; column-gap: 32px; }
+.dk-grp { margin: 0 0 14px; }
+.dk-gh { margin: 0 0 2px; break-after: avoid; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.dk-gh .grpbtn { width: 100%; justify-content: flex-start; }
+.dk-gh-cmd { display: flex; align-items: center; gap: 8px; padding: 0 6px; color: var(--warn); }
+.dk-gh-cmd .i { width: 18px; height: 18px; }
+.dk-cmd { column-span: all; margin-bottom: 20px; }
+.dk-cmdbody { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-start; }
+.dk-cmdimgs { display: flex; gap: 10px; }
+.dk-cmdimgs .cimg { width: 146px; height: 204px; }
+.dk-cmdbody .dk-list { flex: 1 1 320px; min-width: 0; max-width: 520px; }
+.dk-list { margin: 0; padding: 0; list-style: none; }
+
+.dk-row { position: relative; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 2px 6px; border-radius: 8px; break-inside: avoid; }
+.dk-row:hover, .dk-row:focus-within { background: var(--muted); }
+.dk-row.miss { background: color-mix(in srgb, var(--danger) 9%, transparent); }
+.dk-row.is-cmd { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.dk-row[data-sel=true] { background: var(--accent-weak); }
+.dk-ck { flex: none; width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+.dk-th { flex: none; width: 28px; height: 39px; border-radius: 3px; }
+.dk-q { flex: none; min-width: 1.6em; text-align: right; color: var(--text-2); font-weight: 500; }
+.dk-nm { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.dk-name { min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.dk-name:hover { color: var(--accent-hi); text-decoration: underline; }
+.dk-nm .crown { margin-right: 2px; flex: none; }
+.dk-tag { flex: none; display: inline-grid; place-items: center; width: 18px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer; }
+.dk-mv { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.pips { display: inline-flex; gap: 2px; }
+.pip { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--cc); color: #0f172a; font: 700 10px/1 var(--mono); font-style: normal; }
+.dk-cmc { min-width: 1.2em; text-align: right; color: var(--text-muted); font-size: 13px; }
+.dk-pr { flex: none; min-width: 3.6em; text-align: right; color: var(--text-2); font-size: 13px; }
+.dk-own { flex: none; min-width: 2.8em; text-align: right; font-size: 12px; }
+.dk-own.ok { color: var(--accent-hi); } .dk-own.short { color: var(--text-muted); }
+.dk-row.miss .dk-own.short { color: var(--danger-text); }
+.dk-els { flex: none; padding: 1px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.dk-row .rowmenu { flex: none; width: 32px; height: 32px; }
+
+/* edit buttons sit on top of the price / owned columns while the row is hovered or has the keyboard focus */
+.dk-act { display: none; position: absolute; right: 40px; top: 50%; transform: translateY(-50%); gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.dk-act button { width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; color: var(--text); font-size: 16px; line-height: 1; cursor: pointer; }
+.dk-act button:hover { background: var(--muted); }
+@media (hover: hover) { .dk-row:hover .dk-act, .dk-row:focus-within .dk-act { display: inline-flex; } }
+
+/* ---- card preview dialog (tap a name) */
+.pv { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-start; }
+.pv .cimg.big { width: 244px; max-width: 100%; height: auto; }
+.pvb { flex: 1 1 220px; min-width: 0; }
+.pvb h2 { margin-top: 0; }
+
+@media (max-width: 760px) {
+  .dk-wrap, .dk-cost, .dk-filter { padding-left: 12px; padding-right: 12px; }
+  .dk-cmdimgs .cimg { width: 110px; height: 153px; }
+}
+@media (max-width: 520px) { .dk-mv, .dk-els { display: none; } }
+
+/* the header chips wrap on phones instead of pushing the page sideways */
+.decks .card > .hd { flex-wrap: wrap; row-gap: 8px; }
+
+/* category chips on a row, tag button, spacing inside the preview dialog */
+.dk-nm .tagchip.sm { flex: none; min-height: 20px; max-width: 110px; padding: 0 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-act .dk-tagbtn { width: auto; padding: 0 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.pv { padding: 24px; }
+.pvb .acts { display: flex; justify-content: flex-end; margin-top: 18px; }
+
+/* ---- dropdown panels (Deck options, Display): one button, the controls stay out of sight until asked for */
+.dk-dd { position: relative; }
+.dk-dd > summary { list-style: none; cursor: pointer; } .dk-dd > summary::-webkit-details-marker { display: none; }
+.dk-dd[open] > summary { background: var(--muted); }
+.dk-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; display: grid; gap: 8px; min-width: 300px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); box-shadow: var(--shadow); }
+.dk-pop .row { flex-wrap: wrap; gap: 8px; } .dk-ph { margin: 6px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; } .dk-ph:first-child { margin-top: 0; }
+.dk-cn { margin: 0; color: var(--text); } .dk-size { margin: 0; display: flex; align-items: center; gap: 10px; }
+.dk-opts { min-width: 220px; gap: 0; } .dk-opts .opt { text-align: left; padding: 0 8px; }
+.bd-add .input[aria-label="Category for the cards you add"] { width: auto; max-width: 170px; }
+
+/* tidy-up round 2: fewer wrapped rows, smaller commander art */
+.dk-filter .search { flex: 0 1 220px; }
+.dk-filter .bchip { min-height: 36px; padding: 0 12px; font-size: 14px; }
+.bd-add .input[aria-label="Category for the cards you add"] { min-width: 150px; }
+.dk-cmdimgs .cimg { width: 112px; height: 156px; }
+.dk-cmdbody .dk-list { flex: 1 1 260px; }
+/* style.css is loaded after the imports, so these need the extra specificity */
+.tools.dk-filter .search { flex: 0 1 200px; max-width: 200px; }
+.bd-add select.input { width: 190px; max-width: 190px; }
+.bd-add select.input { flex: none; }
+.tools.dk-filter .search { flex: 0 1 170px; max-width: 170px; }
+.tools.dk-filter { gap: 8px; }
+.dk-size { white-space: nowrap; } .dk-size .input { flex: 1; min-width: 0; }
