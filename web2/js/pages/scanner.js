@@ -51,23 +51,31 @@ function binderSelect(label, onPick) {
   fill();
   return sel;
 }
-let lastCard = '—', scannedTotal = 0;
+let lastCard = '—', scannedTotal = 0, lastKey = null;
+// Phones (the same width where the site switches to the top bar and bottom navigation) get their own scanner layout and review sheet.
+const PHONE = '(max-width: 860px)';
+export const isPhone = () => matchMedia(PHONE).matches;
+const HIDE_TIP = 'magiccv2.scan.tiphidden';
+const tipHidden = () => { try { return localStorage.getItem(HIDE_TIP) === '1'; } catch { return false; } };
 
 const pendingCount = () => [...pending.values()].reduce((n, e) => n + e.qty, 0);
 const unitOf = (e, foil) => col.unit({ name: e.name, sp: e.sp, set: e.set, no: e.no, pin: false }, foil);
 const money = (c) => (c == null ? '–' : cat.fmt(c));
+let catOk = false; const catReady = () => catOk;
+const loadCat = () => cat.loadCatalog().then(() => { catOk = true; }, () => {});
 window.addEventListener('beforeunload', (ev) => { if (pending.size) { ev.preventDefault(); ev.returnValue = ''; } });
 
 function addPending(rec) {
   const e = { name: rec.name, sp: rec.special_print || '', set: rec.best_guess_set || '', no: rec.collector_number || '' };
   const key = db.keyOf({ name: e.name, special_print: e.sp, best_guess_set: e.set, collector_number: e.no });
   const p = pending.get(key) || pending.set(key, { key, ...e, qty: 0, foil: 0 }).get(key);
-  p.qty++; if (opts.foil) p.foil++; undo.push({ key, foil: opts.foil }); scannedTotal++;
+  p.qty++; if (opts.foil) p.foil++; undo.push({ key, foil: opts.foil }); scannedTotal++; lastKey = key;
   lastCard = e.name + (e.sp ? ` [${e.sp}]` : '');
 }
 function undoLast() {
   const u = undo.pop(); if (!u) return null; const p = pending.get(u.key); if (!p) return u;
-  p.qty--; if (u.foil && p.foil > 0) p.foil--; if (p.foil > p.qty) p.foil = p.qty; if (p.qty <= 0) pending.delete(u.key); return u;
+  p.qty--; if (u.foil && p.foil > 0) p.foil--; if (p.foil > p.qty) p.foil = p.qty; if (p.qty <= 0) pending.delete(u.key);
+  lastKey = undo.length ? undo[undo.length - 1].key : null; return u;
 }
 let audio = null;
 function beep() {
@@ -78,14 +86,15 @@ function beep() {
     o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.15);
   } catch { /* no audio available */ }
 }
-const thumb = (e, w = 36, hh = 50) => { const r = cat.printings(e.name).find((x) => { const c = cat.rowInfo(x); return c.set === e.set && c.no === e.no; }) ?? cat.printings(e.name)[0]; return r ? h('img', { src: cat.imageUrl(r, 'small'), alt: '', width: w, height: hh, loading: 'lazy', crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg' }) : h('span', { style: `display:inline-block;width:${w}px` }); };
+const thumb = (e, w = 36, hh = 50) => { if (!catReady()) return h('span', { class: 'cimg', style: `display:inline-block;width:${w}px;height:${hh}px` }); const r = cat.printings(e.name).find((x) => { const c = cat.rowInfo(x); return c.set === e.set && c.no === e.no; }) ?? cat.printings(e.name)[0]; return r ? h('img', { src: cat.imageUrl(r, 'small'), alt: '', width: w, height: hh, loading: 'lazy', crossorigin: 'anonymous', referrerpolicy: 'no-referrer', class: 'cimg' }) : h('span', { style: `display:inline-block;width:${w}px` }); };
 
 // ---- the review window: what was scanned, with prices, editable quantities and a foil switch per line
 export async function openReview() {
   if (!pending.size) { toast('Nothing to review yet'); return 'empty'; }
-  try { await cat.loadCatalog(); } catch { /* prices stay blank */ }
+  try { await cat.loadCatalog(); catOk = true; } catch { /* prices stay blank */ }
+  const ph = isPhone();
   const res = await dialog((close) => {
-    const body = h('tbody'), totals = h('div', { class: 'rv-total', 'aria-live': 'polite' }), note = h('p', { class: 'hint' });
+    const body = ph ? h('div', { class: 'rv-cards' }) : h('tbody'), totals = h('div', { class: 'rv-total', 'aria-live': 'polite' }), note = h('p', { class: 'hint' });
     const deckSel = deckSelect('Also add to deck', 'Inventory only', { style: 'width:auto' });
     const refreshBtn = h('button', { class: 'btn sm', type: 'button', onclick: refresh }, 'Refresh prices');
     async function refresh() {
@@ -100,6 +109,7 @@ export async function openReview() {
       body.replaceChildren(...list.map((e) => {
         const a = unitOf(e, false), b = unitOf(e, true), plain = e.qty - e.foil, total = (a ? a.cents * plain : 0) + (b ? b.cents * e.foil : 0);
         sum += total; unpriced += (a ? 0 : plain) + (b ? 0 : e.foil); live ||= !!(a?.live || b?.live);
+        if (ph) return reviewCard(e, a, b, total);
         const qin = h('input', { class: 'input rv-q', type: 'number', min: 0, max: 999, value: e.qty, 'aria-label': `Quantity of ${e.name}`, onchange: (ev) => setQty(e, ev.target.value) });
         const foilBtn = h('button', { class: 'btn sm foilbtn', type: 'button', 'aria-pressed': String(e.foil === e.qty && e.qty > 0), title: 'Foil', 'aria-label': `Foil: ${e.name}`, onclick: () => setFoil(e, e.foil === e.qty ? 0 : e.qty) }, icon('star'), 'Foil');
         return h('tr', null,
@@ -120,6 +130,26 @@ export async function openReview() {
       addBtn.disabled = !n; addBtn.replaceChildren(icon('plus'), n ? `Add ${plural(n, 'card')} to inventory` : 'Nothing to add');
       if (!list.length && d0()) d0().close();
     }
+    // phone: one card per row with big buttons; swipe a card left or right to remove it
+    function reviewCard(e, a, b, total) {
+      const plain = e.qty - e.foil, priced = (a ? plain : 0) + (b ? e.foil : 0) > 0;
+      const card = h('div', { class: 'rvc' },
+        h('div', { class: 'rvc-img' }, thumb(e, 56, 78)),
+        h('div', { class: 'rvc-main' },
+          h('b', { class: 'rvc-name' }, e.name),
+          h('div', { class: 'rvc-meta' }, e.sp ? h('span', { class: 'chip c' }, e.sp) : null, e.set ? h('small', { class: 'mut mono' }, e.set.toUpperCase()) : null, h('small', { class: 'mut mono' }, `${e.foil === e.qty ? money(b?.cents) : money(a?.cents)} each`)),
+          h('div', { class: 'rvc-ctl' },
+            h('span', { class: 'stepper' }, h('button', { type: 'button', 'aria-label': `One fewer ${e.name}`, onclick: () => setQty(e, e.qty - 1) }, '−'), h('b', null, e.qty), h('button', { type: 'button', 'aria-label': `One more ${e.name}`, onclick: () => setQty(e, e.qty + 1) }, '+')),
+            h('button', { class: 'btn sm foilbtn', type: 'button', 'aria-pressed': String(e.foil === e.qty && e.qty > 0), 'aria-label': `Foil: ${e.name}`, onclick: () => setFoil(e, e.foil === e.qty ? 0 : e.qty) }, icon('star'), e.foil && e.foil < e.qty ? `${e.foil} foil` : 'Foil'))),
+        h('div', { class: 'rvc-side' }, h('b', { class: 'mono' }, priced ? money(total) : '–'),
+          h('button', { class: 'btn sm ghost', type: 'button', 'aria-label': `Remove ${e.name}`, onclick: () => setQty(e, 0) }, icon('trash'))));
+      let x0 = null, dx = 0;      // swipe to remove (touch and mouse); a short drag snaps back
+      card.addEventListener('pointerdown', (ev) => { if (ev.target.closest('button, input')) return; x0 = ev.clientX; dx = 0; card.setPointerCapture(ev.pointerId); });
+      card.addEventListener('pointermove', (ev) => { if (x0 == null) return; dx = ev.clientX - x0; card.style.transform = `translateX(${dx}px)`; card.style.opacity = String(Math.max(0.3, 1 - Math.abs(dx) / 260)); });
+      const end = () => { if (x0 == null) return; x0 = null; if (Math.abs(dx) > 110) { setQty(e, 0); toast(`Removed ${e.name}`); } else { card.style.transform = ''; card.style.opacity = ''; } };
+      card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
+      return card;
+    }
     const d0 = () => body.closest('dialog');
     const addBtn = h('button', { class: 'btn primary', type: 'button', onclick: () => {
       const list = [...pending.values()], n = list.reduce((x, e) => x + e.qty, 0); if (!n) return;
@@ -129,6 +159,17 @@ export async function openReview() {
       toast(`Added ${plural(n, 'card')} (about ${money(v.cents)})${opts.binder ? ` to ${opts.binder}` : ''}${opts.deck ? ` and to ${opts.deck}` : ''}`);
     } });
     queueMicrotask(() => { body.closest('dialog')?.classList.add('review'); draw(); });
+    if (ph) {      // phone: full-screen sheet, list scrolls, the add button stays at the bottom
+      return h('div', { class: 'rv rv-phone' },
+        h('div', { class: 'rvp-head' }, h('h2', null, 'Scanned cards'), h('button', { class: 'btn sm ghost', type: 'button', onclick: () => close('keep') }, 'Keep scanning')),
+        h('p', { class: 'hint rvp-tip' }, 'Fix quantities, mark foils, swipe a card sideways to remove it.'),
+        body,
+        h('div', { class: 'rvp-foot' }, totals,
+          h('div', { class: 'rvp-into' }, h('label', { class: 'field' }, h('span', null, 'Binder'), binderSelect('Add the scanned cards to binder')), h('label', { class: 'field' }, h('span', null, 'Deck'), deckSelect('Also add to deck', 'Inventory only'))),
+          addBtn,
+          h('div', { class: 'row rvp-more' }, refreshBtn, h('button', { class: 'btn sm danger', type: 'button', onclick: () => { pending.clear(); undo.length = 0; close('discarded'); toast('Discarded the scanned list'); } }, 'Discard all')),
+          note));
+    }
     return h('div', { class: 'rv' }, h('h2', null, 'Scanned cards'),
       h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Check the list, fix quantities that scanned twice, and mark foils. Nothing is saved to your inventory until you press Add.'),
       h('div', { class: 'tablewrap rv-wrap' }, h('table', null, h('caption', { class: 'sr' }, 'Scanned cards'),
@@ -143,7 +184,7 @@ export async function openReview() {
 }
 
 export function scanner(root) {
-  let stream = null, session = null, dead = false;
+  let stream = null, session = null, dead = false, phoneUi = null;
   const video = h('video', { autoplay: true, playsinline: true, muted: true, 'aria-label': 'Camera preview' });
   const overlay = h('canvas', { 'aria-hidden': 'true' });
   const bar = h('i'), progress = h('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': 0, hidden: true }, bar);
@@ -156,7 +197,7 @@ export function scanner(root) {
   const reviewBtn = h('button', { class: 'btn primary', type: 'button', onclick: review }), undoBtn = h('button', { class: 'btn', type: 'button', onclick: doUndo }, icon('undo'), 'Undo last');
   const banner = h('div', { class: 'callout', role: 'status', hidden: true });
 
-  const idle = () => { phText.replaceChildren('Press Start camera, then hold cards under it.', h('br'), 'Fanned and overlapping cards are fine.'); progress.hidden = true; };
+  const idle = () => { phoneUi?.idle(); phText.replaceChildren('Press Start camera, then hold cards under it.', h('br'), 'Fanned and overlapping cards are fine.'); progress.hidden = true; };
   const status = (text, f) => { phText.textContent = text + (f ? ` ${Math.round(f * 100)} %` : '…'); progress.hidden = false; bar.style.width = (f ? Math.round(f * 100) : 4) + '%'; progress.setAttribute('aria-valuenow', Math.round((f || 0) * 100)); };
   idle();
 
@@ -165,9 +206,10 @@ export function scanner(root) {
     reviewBtn.replaceChildren(icon('list'), n ? `Review (${n})` : 'Review'); reviewBtn.disabled = !n; undoBtn.disabled = !undo.length;
     banner.hidden = !n || !!stream; banner.replaceChildren(h('span', null, `${plural(n, 'scanned card')} waiting for your review.`), h('button', { class: 'btn sm primary', type: 'button', onclick: review }, 'Review now'));
     const items = [...pending.values()].reverse().slice(0, 12);
+    phoneUi?.sync();
     list.replaceChildren(...(items.length ? items.map((e) => h('div', { class: 'rrow' }, h('b', null, e.name), e.sp ? h('span', { class: 'chip c' }, e.sp) : null, e.foil ? h('span', { class: 'chip d' }, e.foil === e.qty ? 'foil' : `${e.foil} foil`) : null, h('small', null, e.set.toUpperCase()), h('span', { class: 'chip a rq' }, '×' + e.qty))) : [h('p', { class: 'hint' }, 'Nothing scanned yet. Cards you scan appear here.')]));
   }
-  function logRow(rec) { addPending(rec); beep(); sync(); }
+  function logRow(rec) { addPending(rec); beep(); if (phoneUi) { try { navigator.vibrate?.(30); } catch { /* no vibration */ } phoneUi.pop(); } sync(); }
   function doUndo() { const u = undoLast(); if (u) { scannedTotal = Math.max(0, scannedTotal - 1); toast('Removed the last scan'); } sync(); }
   async function review() { if (stream) stop(); const r = await openReview(); sync(); if (r === 'added') msg.textContent = 'Added to your inventory.'; }
   async function ready() { const eng = await loadEngine({ backend: prefs().backend, threads: prefs().threads, onStatus: status }); v.be.textContent = eng.backend; if (eng.note) msg.textContent = eng.note; return eng; }
@@ -181,7 +223,7 @@ export function scanner(root) {
       status('Opening the camera', 0); const cam = prefs().camera;
       stream = await navigator.mediaDevices.getUserMedia({ video: { ...(cam ? { deviceId: { exact: cam } } : { facingMode: 'environment' }), width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
       video.srcObject = stream; await video.play().catch(() => {});
-      stage.classList.add('live'); startBtn.className = 'btn danger block'; startBtn.replaceChildren(icon('x'), 'Stop camera and review'); sync();
+      stage.classList.add('live'); startBtn.className = 'btn danger block'; startBtn.replaceChildren(icon('x'), 'Stop camera and review'); phoneUi?.enter(stream); sync();
       session = new ScanSession({ engine: eng, video, overlay, conf: prefs().conf, onLog: logRow, onStats: (s) => {
         if (s.error) { msg.textContent = s.error; return; }
         v.fps.textContent = s.fps.toFixed(1); v.view.textContent = s.cards; v.ms.textContent = s.recMs ? Math.round(s.recMs) + ' ms' : '—'; } });
@@ -194,7 +236,7 @@ export function scanner(root) {
   }
   function stop() {
     session?.stop(); session = null; overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height); stream?.getTracks().forEach((x) => x.stop()); stream = null; video.srcObject = null;
-    stage.classList.remove('live', 'still'); startBtn.className = 'btn primary block'; startBtn.replaceChildren(icon('camera'), 'Start camera'); idle(); sync();
+    stage.classList.remove('live', 'still'); startBtn.className = 'btn primary block'; startBtn.replaceChildren(icon('camera'), 'Start camera'); phoneUi?.exit(); idle(); sync();
   }
 
   async function imageTest() {
@@ -234,6 +276,93 @@ export function scanner(root) {
   const camBtn = h('button', { class: 'btn block', type: 'button', onclick: async () => { try { const m = await import('../camcheck.js'); await m.openCameraCheck(); } catch (e) { toast('Camera check is not available: ' + (e.message || e)); } } }, icon('camera'), 'Check my camera');
   const firstRun = h('div', { class: 'callout', role: 'region', 'aria-label': 'First time', hidden: true }, h('span', null, 'First time here? Check that your camera is sharp enough by scanning a card the app knows.'), h('button', { class: 'btn sm primary', type: 'button', onclick: () => camBtn.click() }, 'Check camera'));
   import('../camcheck.js').then((m) => { firstRun.hidden = !m.shouldPromptFirstRun(); }, () => { camBtn.hidden = true; });
+
+  if (isPhone()) { phoneLayout(); sync(); return { stop: () => { dead = true; stop(); } }; }
+
+  // ---- phones: a big camera that goes full screen while scanning, controls under the thumb, the last card on screen
+  function phoneLayout() {
+    loadCat().then(() => { if (!dead) sync(); });
+    const intoText = () => `${opts.binder || 'Unsorted'}${opts.deck ? ' · ' + opts.deck : ''}`;
+    const intoBtns = [];
+    const intoBtn = (cls) => { const b = h('button', { type: 'button', class: cls, 'aria-label': 'Choose where scanned cards go', onclick: openSetup }, icon('box'), h('span', null, 'Into ', h('b', null, intoText())), icon('down')); intoBtns.push(b); return b; };
+    const refreshInto = () => intoBtns.forEach((b) => { b.querySelector('b').textContent = intoText(); });
+    async function openSetup() {
+      await dialog((close) => h('div', { class: 'sheet-body' }, h('h2', null, 'Where scanned cards go'),
+        h('label', { class: 'field' }, h('span', null, 'Binder'), binderSelect('Binder for scanned cards', refreshInto)),
+        h('label', { class: 'field' }, h('span', null, 'Deck'), deckSelect('Also add to deck', 'Inventory only')),
+        h('p', { class: 'hint' }, 'You can still change this in the review, before anything is saved.'),
+        h('div', { class: 'acts' }, h('button', { class: 'btn primary', type: 'button', onclick: () => close(true) }, 'Done'))), { label: 'Where scanned cards go' });
+      refreshInto();
+    }
+
+    let track = null, torchOn = false, stripOpen = false, inHistory = false;
+    const foilBtn = h('button', { type: 'button', class: 'ms-btn', 'aria-pressed': String(opts.foil), onclick: () => { opts.foil = !opts.foil; foilBtn.setAttribute('aria-pressed', String(opts.foil)); foilBtn.lastChild.textContent = opts.foil ? 'Foil on' : 'Foil'; } }, icon('star'), h('span', null, opts.foil ? 'Foil on' : 'Foil'));
+    const torchBtn = h('button', { type: 'button', class: 'ms-btn', hidden: true, 'aria-pressed': 'false', onclick: async () => {
+      try { torchOn = !torchOn; await track.applyConstraints({ advanced: [{ torch: torchOn }] }); torchBtn.setAttribute('aria-pressed', String(torchOn)); } catch { toast('This camera has no flashlight control'); torchBtn.hidden = true; }
+    } }, icon('zap'), h('span', null, 'Light'));
+    const closeBtn = h('button', { type: 'button', class: 'ms-btn ms-round', 'aria-label': 'Stop scanning', onclick: () => stop() }, icon('x'));
+    const doneBtn = h('button', { type: 'button', class: 'ms-done', onclick: () => toggle() }, h('b', null, 'Stop'), h('small', null, ''));
+    const undoBtn2 = h('button', { type: 'button', class: 'ms-btn', onclick: doUndo }, icon('undo'), h('span', null, 'Undo'));
+    const strip = h('div', { class: 'ms-strip', hidden: true, 'aria-live': 'polite' });
+    const ctrl = h('div', { class: 'ms-ctrl' },
+      h('div', { class: 'ms-top' }, closeBtn, intoBtn('ms-into'), torchBtn),
+      h('div', { class: 'ms-bottom' }, strip, h('div', { class: 'ms-bar' }, undoBtn2, doneBtn, foilBtn)));
+    const startOver = h('button', { type: 'button', class: 'ms-startover', onclick: () => { if (startBtn.disabled) return; startOver.hidden = true; startBtn.click(); } }, icon('camera'), h('b', null, 'Tap to start scanning'), h('small', null, 'Hold cards in front of the camera'));
+    const camWrap = h('div', { class: 'ms-cam' }, stage, startOver, ctrl);
+    const toggleLastFoil = () => {
+      const u = undo[undo.length - 1], p = u && pending.get(u.key); if (!p) return;
+      if (u.foil) { u.foil = false; p.foil = Math.max(0, p.foil - 1); } else { u.foil = true; p.foil = Math.min(p.qty, p.foil + 1); }
+      sync();
+    };
+    const onPop = () => { if (inHistory) { inHistory = false; stop(); } };      // the phone's back button leaves full screen instead of the page
+    const onKey = (e) => { if (e.key === 'Escape' && stream) stop(); };
+    phoneUi = {
+      enter(st) {
+        startOver.hidden = true; camWrap.classList.add('full'); document.body.classList.add('scanning');
+        track = st.getVideoTracks()[0]; torchOn = false; torchBtn.setAttribute('aria-pressed', 'false');
+        try { torchBtn.hidden = !(track.getCapabilities?.() || {}).torch; } catch { torchBtn.hidden = true; }
+        history.pushState({ scanning: true }, ''); inHistory = true; addEventListener('popstate', onPop); addEventListener('keydown', onKey);
+      },
+      exit() {
+        camWrap.classList.remove('full'); document.body.classList.remove('scanning'); track = null; torchBtn.hidden = true; stripOpen = false;
+        removeEventListener('popstate', onPop); removeEventListener('keydown', onKey);
+        if (inHistory) { inHistory = false; if (!dead) history.back(); }      // not when the page itself is being left
+      },
+      idle() { startOver.hidden = false; },
+      pop() { strip.classList.remove('pop'); void strip.offsetWidth; strip.classList.add('pop'); },
+      sync() {
+        const n = pendingCount();
+        doneBtn.firstChild.textContent = n ? 'Done' : 'Stop'; doneBtn.lastChild.textContent = n ? `review ${plural(n, 'card')}` : 'nothing scanned yet';
+        undoBtn2.disabled = !undo.length;
+        const e = lastKey && pending.get(lastKey), u = undo[undo.length - 1];
+        strip.hidden = !e; if (!e) { stripOpen = false; return; }
+        const price = catReady() ? money(unitOf(e, !!u?.foil)?.cents) : '';
+        strip.replaceChildren(
+          h('button', { type: 'button', class: 'ms-last', 'aria-expanded': String(stripOpen), 'aria-label': `Last scanned: ${e.name}. Tap for options`, onclick: () => { stripOpen = !stripOpen; sync(); } },
+            thumb(e, 40, 56), h('span', { class: 'ms-lastn' }, h('b', null, e.name), h('small', null, [e.sp, e.set.toUpperCase(), price, u?.foil ? 'foil' : ''].filter(Boolean).join(' · '))), h('span', { class: 'chip a' }, '×' + e.qty)),
+          stripOpen ? h('div', { class: 'ms-lastacts' },
+            h('button', { class: 'btn sm', type: 'button', onclick: () => { stripOpen = false; doUndo(); } }, icon('undo'), 'Remove this scan'),
+            h('button', { class: 'btn sm', type: 'button', onclick: toggleLastFoil }, icon('star'), u?.foil ? 'Not foil' : 'Mark foil')) : null);
+      },
+    };
+
+    const tip = h('div', { class: 'callout ms-tip', hidden: true }, h('span', null, 'First time? Check that your camera is sharp enough.'),
+      h('button', { class: 'btn sm primary', type: 'button', onclick: () => camBtn.click() }, 'Check camera'),
+      h('button', { class: 'btn sm ghost', type: 'button', 'aria-label': 'Hide this tip', onclick: () => { try { localStorage.setItem(HIDE_TIP, '1'); } catch { /* shown again next time */ } tip.hidden = true; } }, icon('x')));
+    import('../camcheck.js').then((m) => { tip.hidden = tipHidden() || !m.shouldPromptFirstRun(); }, () => {});
+    const more = h('details', { class: 'card ms-more' }, h('summary', null, 'More options'),
+      h('div', { class: 'bd', style: 'display:grid;gap:14px' },
+        h('label', { class: 'field' }, h('span', null, 'Run the scanner on'), runOn),
+        h('label', { class: 'check' }, soundChk, 'Beep when a card is recognised'),
+        h('button', { class: 'btn block', onclick: imageTest }, icon('image'), 'Scan a photo instead'), camBtn,
+        h('div', null, kv('Frames per second', v.fps), kv('Cards in view', v.view), kv('Time per card', v.ms), kv('Runs on', v.be)),
+        h('p', { class: 'hint' }, 'The first start downloads about 110 MB (use Wi-Fi), which your browser then keeps. Changing "Run the scanner on" after it has run reloads the page.')));
+    root.replaceChildren(h('div', { class: 'page ms-page' },
+      h('div', { class: 'ms-head' }, h('h1', null, 'Scanner'), intoBtn('ms-into ms-into-page')),
+      banner, tip, camWrap, msg, startBtn, h('div', { class: 'row ms-row' }, reviewBtn, undoBtn),
+      h('section', { class: 'card', 'aria-label': 'This session' }, h('div', { class: 'hd' }, icon('list'), h('h2', null, 'This session'), h('span', { class: 'grow' }), h('span', { class: 'hint' }, plural(scannedTotal, 'scan'))), h('div', { class: 'bd' }, list)),
+      more));
+  }
 
   root.replaceChildren(h('div', { class: 'page' },
     h('div', { class: 'head' }, h('div', null, h('h1', null, 'Scanner'), h('p', null, 'Hold cards under the camera. Scanned cards collect in a list; when you stop, you review prices, quantities and foils before they are added. Everything runs in your browser; nothing is uploaded.'))),

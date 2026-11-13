@@ -9,6 +9,15 @@
   <link rel="preload" href="fonts/FiraSans-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/FiraSans-600.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/mobile.css">
+  <!-- installable app (Add to Home Screen): opens full screen, without the browser bars -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#020617">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MagicCV">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <!-- lets the model use several threads on GitHub Pages: adds the cross-origin-isolation headers and reloads once. Registered from the repo root so its scope also covers the shared model runtime under /web/ (a worker script outside the scope would be blocked). -->
   <script src="../coi-serviceworker.js"></script>
 </head>
