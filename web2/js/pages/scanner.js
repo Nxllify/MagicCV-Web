@@ -60,8 +60,19 @@ const tipHidden = () => { try { return localStorage.getItem(HIDE_TIP) === '1'; }
 
 const pendingCount = () => [...pending.values()].reduce((n, e) => n + e.qty, 0);
 const unitOf = (e, foil) => col.unit({ name: e.name, sp: e.sp, set: e.set, no: e.no, pin: false }, foil);
+const lineValue = (e) => { const a = unitOf(e, false), b = unitOf(e, true), plain = e.qty - e.foil; return { each: e.foil === e.qty ? b?.cents : a?.cents, total: (a ? a.cents * plain : 0) + (b ? b.cents * e.foil : 0), priced: (a ? plain : 0) + (b ? e.foil : 0) > 0 }; };
+const pendingValue = () => (catReady() ? [...pending.values()].reduce((s, e) => s + lineValue(e).total, 0) : null);
 const money = (c) => (c == null ? '–' : cat.fmt(c));
 let catOk = false; const catReady = () => catOk;
+// ---- card prices in the scanner (a switch: Settings > scanner "Show card prices", or the $ button on the phone camera)
+const showPrices = () => prefs().prices !== false;
+const rowPriceCache = new Map();      // catalog row + foil -> " · $1.20"; cleared when prices are refreshed
+function overlayPrice(row) {      // the text after a name on the live overlay: the cheapest printing with the same treatment, like the review
+  if (!showPrices() || !catReady()) return '';
+  const k = row + (opts.foil ? 'f' : 'n'); let v = rowPriceCache.get(k);
+  if (v === undefined) { try { const i = cat.rowInfo(row), p = cat.cheapest(i.name, { treat: i.treat, foil: opts.foil }); v = p ? ' · ' + cat.fmt(p.cents) : ''; } catch { v = ''; } rowPriceCache.set(k, v); }
+  return v;
+}
 const loadCat = () => cat.loadCatalog().then(() => { catOk = true; }, () => {});
 window.addEventListener('beforeunload', (ev) => { if (pending.size) { ev.preventDefault(); ev.returnValue = ''; } });
 
@@ -99,7 +110,7 @@ export async function openReview() {
     const refreshBtn = h('button', { class: 'btn sm', type: 'button', onclick: refresh }, 'Refresh prices');
     async function refresh() {
       refreshBtn.disabled = true; refreshBtn.textContent = 'Refreshing…';
-      try { const rows = [...pending.values()].flatMap((e) => [unitOf(e, false)?.row, unitOf(e, true)?.row]).filter(Boolean); const n = await cat.refreshPrices([...new Set(rows)]); toast(`Live prices for ${plural(n, 'printing')}`); } catch (er) { toast(er.message); }
+      try { const rows = [...pending.values()].flatMap((e) => [unitOf(e, false)?.row, unitOf(e, true)?.row]).filter(Boolean); const n = await cat.refreshPrices([...new Set(rows)]); rowPriceCache.clear(); toast(`Live prices for ${plural(n, 'printing')}`); } catch (er) { toast(er.message); }
       draw(); refreshBtn.disabled = false; refreshBtn.textContent = 'Refresh prices';
     }
     function setQty(e, q) { q = Math.max(0, Math.floor(+q) || 0); e.qty = q; if (e.foil > q) e.foil = q; if (!q) pending.delete(e.key); draw(); }
@@ -192,7 +203,7 @@ export function scanner(root) {
   const stage = h('div', { class: 'stage' }, video, overlay, h('div', { class: 'ph' }, icon('scan'), phText, progress), h('div', { class: 'live-tag' }, h('i'), 'LIVE'));
   const msg = h('p', { class: 'hint', role: 'status', 'aria-live': 'polite', style: 'min-height:20px' });
   const startBtn = h('button', { class: 'btn primary block', onclick: toggle }, icon('camera'), 'Start camera');
-  const v = { session: h('b', null, scannedTotal), inv: h('b', null, db.stats().total), pend: h('b', null, pendingCount()), last: h('b', { class: 'sm' }, lastCard), fps: h('span', null, '—'), view: h('span', null, '0'), ms: h('span', null, '—'), be: h('span', null, '—') };
+  const v = { session: h('b', null, scannedTotal), inv: h('b', null, db.stats().total), pend: h('b', null, pendingCount()), pendVal: h('span', { class: 'hint' }), last: h('b', { class: 'sm' }, lastCard), fps: h('span', null, '—'), view: h('span', null, '0'), ms: h('span', null, '—'), be: h('span', null, '—') };
   const list = h('div', { class: 'recent' });
   const reviewBtn = h('button', { class: 'btn primary', type: 'button', onclick: review }), undoBtn = h('button', { class: 'btn', type: 'button', onclick: doUndo }, icon('undo'), 'Undo last');
   const banner = h('div', { class: 'callout', role: 'status', hidden: true });
@@ -206,8 +217,12 @@ export function scanner(root) {
     reviewBtn.replaceChildren(icon('list'), n ? `Review (${n})` : 'Review'); reviewBtn.disabled = !n; undoBtn.disabled = !undo.length;
     banner.hidden = !n || !!stream; banner.replaceChildren(h('span', null, `${plural(n, 'scanned card')} waiting for your review.`), h('button', { class: 'btn sm primary', type: 'button', onclick: review }, 'Review now'));
     const items = [...pending.values()].reverse().slice(0, 12);
+    const pv = pendingValue(), priced = showPrices() && catReady();
+    v.pendVal.textContent = priced && n ? `about ${money(pv)}` : '';
     phoneUi?.sync();
-    list.replaceChildren(...(items.length ? items.map((e) => h('div', { class: 'rrow' }, h('b', null, e.name), e.sp ? h('span', { class: 'chip c' }, e.sp) : null, e.foil ? h('span', { class: 'chip d' }, e.foil === e.qty ? 'foil' : `${e.foil} foil`) : null, h('small', null, e.set.toUpperCase()), h('span', { class: 'chip a rq' }, '×' + e.qty))) : [h('p', { class: 'hint' }, 'Nothing scanned yet. Cards you scan appear here.')]));
+    list.replaceChildren(...(items.length ? items.map((e) => { const lv = priced ? lineValue(e) : null;
+      return h('div', { class: 'rrow' }, h('b', null, e.name), e.sp ? h('span', { class: 'chip c' }, e.sp) : null, e.foil ? h('span', { class: 'chip d' }, e.foil === e.qty ? 'foil' : `${e.foil} foil`) : null, h('small', null, e.set.toUpperCase()),
+        lv ? h('span', { class: 'rprice mono', title: lv.priced ? `${money(lv.each)} each` : 'no price' }, lv.priced ? money(lv.total) : '–') : null, h('span', { class: 'chip a rq' }, '×' + e.qty)); }) : [h('p', { class: 'hint' }, 'Nothing scanned yet. Cards you scan appear here.')]));
   }
   function logRow(rec) { addPending(rec); beep(); if (phoneUi) { try { navigator.vibrate?.(30); } catch { /* no vibration */ } phoneUi.pop(); } sync(); }
   function doUndo() { const u = undoLast(); if (u) { scannedTotal = Math.max(0, scannedTotal - 1); toast('Removed the last scan'); } sync(); }
@@ -224,7 +239,7 @@ export function scanner(root) {
       stream = await navigator.mediaDevices.getUserMedia({ video: { ...(cam ? { deviceId: { exact: cam } } : { facingMode: 'environment' }), width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
       video.srcObject = stream; await video.play().catch(() => {});
       stage.classList.add('live'); startBtn.className = 'btn danger block'; startBtn.replaceChildren(icon('x'), 'Stop camera and review'); phoneUi?.enter(stream); sync();
-      session = new ScanSession({ engine: eng, video, overlay, conf: prefs().conf, onLog: logRow, onStats: (s) => {
+      session = new ScanSession({ engine: eng, video, overlay, conf: prefs().conf, onLog: logRow, extra: overlayPrice, onStats: (s) => {
         if (s.error) { msg.textContent = s.error; return; }
         v.fps.textContent = s.fps.toFixed(1); v.view.textContent = s.cards; v.ms.textContent = s.recMs ? Math.round(s.recMs) + ' ms' : '—'; } });
       session.start();
@@ -244,6 +259,7 @@ export function scanner(root) {
     if (!file) return; if (stream) stop(); msg.textContent = '';
     try {
       const eng = await ready(); if (dead) return;
+      if (showPrices()) await loadCat();      // so the labels on the photo can carry prices
       const bmp = await createImageBitmap(file); overlay.width = bmp.width; overlay.height = bmp.height;
       const c = overlay.getContext('2d'); c.drawImage(bmp, 0, 0); stage.classList.add('still');
       status('Scanning the image', 0);
@@ -253,7 +269,7 @@ export function scanner(root) {
       for (const r of res) {
         const colr = r.sure ? '#4ade80' : '#fbbf24'; c.lineWidth = Math.max(2, bmp.width / 480); c.strokeStyle = colr; c.beginPath();
         r.corners.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.closePath(); c.stroke();
-        const text = r.sure ? r.label : `not sure (${eng.matcher.cards.name[r.row]}? ${r.info.cos.toFixed(2)})`;
+        const text = r.sure ? r.label + overlayPrice(r.row) : `not sure (${eng.matcher.cards.name[r.row]}? ${r.info.cos.toFixed(2)})`;
         const x = Math.max(0, Math.min(...r.corners.map((p) => p[0]))), y = Math.min(...r.corners.map((p) => p[1])), w = c.measureText(text).width + fs * 0.8, ty = y < fs * 1.6 ? y + fs * 1.6 : y - fs * 0.3;
         c.fillStyle = 'rgba(2,6,23,.85)'; c.fillRect(x, ty - fs * 1.15, w, fs * 1.35); c.fillStyle = colr; c.fillText(text, x + fs * 0.4, ty);
         if (r.sure) { logRow(eng.matcher.record(r.row)); named++; }
@@ -272,6 +288,12 @@ export function scanner(root) {
   webgpuAvailable().then((ok) => { if (!ok) { const o = [...runOn.options].find((x) => x.value === 'webgpu'); o.textContent += ' - not available in this browser'; } });
   const kv = (k, el) => h('div', { class: 'kv' }, h('span', null, k), el);
   const dest = deckSelect('Scanning into', 'Inventory', { id: 'dest' });
+  const priceChk = h('input', { type: 'checkbox', checked: showPrices(), onchange: (e) => setPrices(e.target.checked) });
+  function setPrices(on) {      // one switch for the camera labels, the list under the camera and the phone buttons
+    setPrefs({ prices: on }); priceChk.checked = on; phoneUi?.syncPrices(); rowPriceCache.clear();
+    if (on && !catReady()) loadCat().then(() => { if (!dead) sync(); }); sync();
+  }
+  if (showPrices()) loadCat().then(() => { rowPriceCache.clear(); if (!dead) sync(); });
     const soundChk = h('input', { type: 'checkbox', checked: prefs().sound, onchange: (e) => { setPrefs({ sound: e.target.checked }); if (e.target.checked) beep(); } });
   const camBtn = h('button', { class: 'btn block', type: 'button', onclick: async () => { try { const m = await import('../camcheck.js'); await m.openCameraCheck(); } catch (e) { toast('Camera check is not available: ' + (e.message || e)); } } }, icon('camera'), 'Check my camera');
   const firstRun = h('div', { class: 'callout', role: 'region', 'aria-label': 'First time', hidden: true }, h('span', null, 'First time here? Check that your camera is sharp enough by scanning a card the app knows.'), h('button', { class: 'btn sm primary', type: 'button', onclick: () => camBtn.click() }, 'Check camera'));
@@ -281,7 +303,6 @@ export function scanner(root) {
 
   // ---- phones: a big camera that goes full screen while scanning, controls under the thumb, the last card on screen
   function phoneLayout() {
-    loadCat().then(() => { if (!dead) sync(); });
     const intoText = () => `${opts.binder || 'Unsorted'}${opts.deck ? ' · ' + opts.deck : ''}`;
     const intoBtns = [];
     const intoBtn = (cls) => { const b = h('button', { type: 'button', class: cls, 'aria-label': 'Choose where scanned cards go', onclick: openSetup }, icon('box'), h('span', null, 'Into ', h('b', null, intoText())), icon('down')); intoBtns.push(b); return b; };
@@ -301,11 +322,12 @@ export function scanner(root) {
       try { torchOn = !torchOn; await track.applyConstraints({ advanced: [{ torch: torchOn }] }); torchBtn.setAttribute('aria-pressed', String(torchOn)); } catch { toast('This camera has no flashlight control'); torchBtn.hidden = true; }
     } }, icon('zap'), h('span', null, 'Light'));
     const closeBtn = h('button', { type: 'button', class: 'ms-btn ms-round', 'aria-label': 'Stop scanning', onclick: () => stop() }, icon('x'));
+    const priceBtn = h('button', { type: 'button', class: 'ms-btn ms-round ms-dollar', 'aria-label': 'Show card prices', 'aria-pressed': String(showPrices()), onclick: () => setPrices(!showPrices()) }, '$');
     const doneBtn = h('button', { type: 'button', class: 'ms-done', onclick: () => toggle() }, h('b', null, 'Stop'), h('small', null, ''));
     const undoBtn2 = h('button', { type: 'button', class: 'ms-btn', onclick: doUndo }, icon('undo'), h('span', null, 'Undo'));
     const strip = h('div', { class: 'ms-strip', hidden: true, 'aria-live': 'polite' });
     const ctrl = h('div', { class: 'ms-ctrl' },
-      h('div', { class: 'ms-top' }, closeBtn, intoBtn('ms-into'), torchBtn),
+      h('div', { class: 'ms-top' }, closeBtn, intoBtn('ms-into'), priceBtn, torchBtn),
       h('div', { class: 'ms-bottom' }, strip, h('div', { class: 'ms-bar' }, undoBtn2, doneBtn, foilBtn)));
     const startOver = h('button', { type: 'button', class: 'ms-startover', onclick: () => { if (startBtn.disabled) return; startOver.hidden = true; startBtn.click(); } }, icon('camera'), h('b', null, 'Tap to start scanning'), h('small', null, 'Hold cards in front of the camera'));
     const camWrap = h('div', { class: 'ms-cam' }, stage, startOver, ctrl);
@@ -329,14 +351,16 @@ export function scanner(root) {
         if (inHistory) { inHistory = false; if (!dead) history.back(); }      // not when the page itself is being left
       },
       idle() { startOver.hidden = false; },
+      syncPrices() { priceBtn.setAttribute('aria-pressed', String(showPrices())); },
       pop() { strip.classList.remove('pop'); void strip.offsetWidth; strip.classList.add('pop'); },
       sync() {
         const n = pendingCount();
-        doneBtn.firstChild.textContent = n ? 'Done' : 'Stop'; doneBtn.lastChild.textContent = n ? `review ${plural(n, 'card')}` : 'nothing scanned yet';
+        doneBtn.firstChild.textContent = n ? 'Done' : 'Stop'; const pv = showPrices() ? pendingValue() : null;
+        doneBtn.lastChild.textContent = n ? `review ${plural(n, 'card')}${pv != null ? ' · ' + money(pv) : ''}` : 'nothing scanned yet';
         undoBtn2.disabled = !undo.length;
         const e = lastKey && pending.get(lastKey), u = undo[undo.length - 1];
         strip.hidden = !e; if (!e) { stripOpen = false; return; }
-        const price = catReady() ? money(unitOf(e, !!u?.foil)?.cents) : '';
+        const price = showPrices() && catReady() ? money(unitOf(e, !!u?.foil)?.cents) : '';
         strip.replaceChildren(
           h('button', { type: 'button', class: 'ms-last', 'aria-expanded': String(stripOpen), 'aria-label': `Last scanned: ${e.name}. Tap for options`, onclick: () => { stripOpen = !stripOpen; sync(); } },
             thumb(e, 40, 56), h('span', { class: 'ms-lastn' }, h('b', null, e.name), h('small', null, [e.sp, e.set.toUpperCase(), price, u?.foil ? 'foil' : ''].filter(Boolean).join(' · '))), h('span', { class: 'chip a' }, '×' + e.qty)),
@@ -354,6 +378,7 @@ export function scanner(root) {
       h('div', { class: 'bd', style: 'display:grid;gap:14px' },
         h('label', { class: 'field' }, h('span', null, 'Run the scanner on'), runOn),
         h('label', { class: 'check' }, soundChk, 'Beep when a card is recognised'),
+        h('label', { class: 'check' }, priceChk, 'Show card prices'),
         h('button', { class: 'btn block', onclick: imageTest }, icon('image'), 'Scan a photo instead'), camBtn,
         h('div', null, kv('Frames per second', v.fps), kv('Cards in view', v.view), kv('Time per card', v.ms), kv('Runs on', v.be)),
         h('p', { class: 'hint' }, 'The first start downloads about 110 MB (use Wi-Fi), which your browser then keeps. Changing "Run the scanner on" after it has run reloads the page.')));
@@ -375,10 +400,11 @@ export function scanner(root) {
           h('label', { class: 'field' }, h('span', null, 'Scanning into'), dest),
           h('label', { class: 'field' }, h('span', null, 'Into binder'), binderSelect('Scanned cards go into binder')),
           h('label', { class: 'check' }, soundChk, 'Beep when a card is recognised'),
+          h('label', { class: 'check' }, priceChk, 'Show card prices'),
           startBtn, h('div', { class: 'row' }, reviewBtn, undoBtn),
           h('button', { class: 'btn block', onclick: imageTest }, icon('image'), 'Scan an image file'), camBtn,
           h('p', { class: 'hint' }, 'No camera? Pick a photo of cards to try the scanner. Changing "Run the scanner on" after it has run reloads the page. The first start downloads about 110 MB, which your browser then caches.'))),
-        h('div', { class: 'stats', style: 'margin:0' }, h('div', { class: 'stat a' }, h('small', null, 'Scanned this session'), v.session), h('div', { class: 'stat c' }, h('small', null, 'Waiting for review'), v.pend), h('div', { class: 'stat b' }, h('small', null, 'In inventory'), v.inv), h('div', { class: 'stat d' }, h('small', null, 'Last card'), v.last)),
+        h('div', { class: 'stats', style: 'margin:0' }, h('div', { class: 'stat a' }, h('small', null, 'Scanned this session'), v.session), h('div', { class: 'stat c' }, h('small', null, 'Waiting for review'), v.pend, v.pendVal), h('div', { class: 'stat b' }, h('small', null, 'In inventory'), v.inv), h('div', { class: 'stat d' }, h('small', null, 'Last card'), v.last)),
         h('section', { class: 'card', 'aria-label': 'Live status' }, h('div', { class: 'hd' }, icon('cpu'), h('h2', null, 'Live')), h('div', { class: 'bd' }, kv('Frames per second', v.fps), kv('Cards in view', v.view), kv('Time per card', v.ms), kv('Runs on', v.be))),
         h('section', { class: 'card', 'aria-label': 'This session' }, h('div', { class: 'hd' }, icon('list'), h('h2', null, 'This session')), h('div', { class: 'bd' }, list))))));
   sync();

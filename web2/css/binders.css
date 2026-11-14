@@ -79,3 +79,8 @@ tr:hover .rowmenu, tr:focus-within .rowmenu, .rowmenu:focus-visible, .rowmenu[ar
 .cardmenu [role=menuitem]:hover, .cardmenu [role=menuitem]:focus-visible { background: var(--muted); }
 .cardmenu [role=menuitem].danger { color: var(--danger-text); }
 @media (max-width: 560px) { .cardmenu { grid-template-columns: 1fr; } .cardmenu .mcol + .mcol { border-left: 0; border-top: 1px solid var(--line); } }
+
+/* ---- scanner: price on each line of the session list */
+.rrow .rprice { margin-left: auto; color: var(--accent-hi); font-size: 13px; white-space: nowrap; }
+.rrow .rprice + .rq { margin-left: 8px; }
+.ms-dollar { font-size: 20px; font-weight: 700; font-family: var(--mono); }

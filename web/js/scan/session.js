@@ -6,8 +6,8 @@ import { frameData } from './pipeline.js';
 const RECHECK_MS = 600;       // pause before the same unidentified card is looked at again
 
 export class ScanSession {
-  constructor({ engine, video, overlay, conf = 0.3, onLog, onStats }) {
-    Object.assign(this, { engine, video, overlay, conf, onLog, onStats });
+  constructor({ engine, video, overlay, conf = 0.3, onLog, onStats, extra }) {      // extra(row): optional text added after a card's name on the live overlay (web2 uses it for the price)
+    Object.assign(this, { engine, video, overlay, conf, onLog, onStats, extra });
     this.tracker = new Tracker(); this.running = false; this.logged = 0; this.fps = 0; this.recMs = 0; this.turn = 0;
   }
   start() { this.running = true; this.loop(); }
@@ -72,7 +72,7 @@ export class ScanSession {
       ctx.lineWidth = Math.max(2, vw / 480); ctx.strokeStyle = col; ctx.beginPath();
       t.shown.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
       if (!conf) continue;
-      const text = `#${t.id} ` + (t.ident ? t.ident.label + (t.logged ? '' : ' …') : 'identifying…');
+      const text = `#${t.id} ` + (t.ident ? t.ident.label + (this.extra?.(t.ident.row) || '') + (t.logged ? '' : ' …') : 'identifying…');
       const x = Math.min(...t.shown.map((p) => p[0])), y = Math.min(...t.shown.map((p) => p[1])), w = ctx.measureText(text).width + fs * 0.8;
       const ty = y - fs * 0.3 < fs * 1.4 ? y + fs * 1.5 : y - fs * 0.3;
       ctx.fillStyle = 'rgba(6,10,20,.82)'; ctx.fillRect(Math.max(0, x), ty - fs * 1.15, w, fs * 1.35);

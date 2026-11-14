@@ -10,7 +10,7 @@ export const THEMES = [   // swatch = [background, surface, accent, text]
   { id: 'light', name: 'Light', note: 'Light surfaces, green accent', swatch: ['#f1f5f9', '#ffffff', '#15803d', '#0f172a'] },
 ];
 export const BACKENDS = [['auto', 'Automatic (WebGPU if available)'], ['webgpu', 'Graphics card (WebGPU)'], ['wasm', 'CPU (WASM)']];
-const DEFAULTS = { theme: 'dark', backend: 'auto', threads: 'auto', conf: 0.3, camera: '', sound: true };
+const DEFAULTS = { theme: 'dark', backend: 'auto', threads: 'auto', conf: 0.3, camera: '', sound: true, prices: true };
 let s = { ...DEFAULTS };
 try { s = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY)) }; } catch { /* defaults */ }
 if (!THEMES.some((t) => t.id === s.theme)) s.theme = DEFAULTS.theme;
